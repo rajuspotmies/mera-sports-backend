@@ -255,7 +255,7 @@ router.get('/:id', async (req, res) => {
             const uniqueStatuses = [...new Set(statuses)];
 
         } else {
-            console.log(`[DIAGNOSTIC] EventID: ${id} - Query returned null/error:`, debugError);
+            // console.log(`[DIAGNOSTIC] EventID: ${id} - Query returned null/error:`, debugError);
         }
 
         // Fetch Registration Counts

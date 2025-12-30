@@ -140,15 +140,15 @@ router.post("/verify-verification-otp", async (req, res) => {
 async function uploadImageToSupabase(base64Data) {
     try {
         if (!base64Data || typeof base64Data !== 'string') {
-            console.log("❌ UploadImage: No base64 data provided or not a string.");
+
             return null;
         }
 
-        console.log("UploadImage: Received string length:", base64Data.length, "Preview:", base64Data.substring(0, 50));
+
 
         const matches = base64Data.match(/^data:image\/([a-zA-Z]+);base64,(.+)$/);
         if (!matches || matches.length !== 3) {
-            console.log("❌ UploadImage: Regex match failed.");
+
             return null;
         }
 
@@ -175,7 +175,7 @@ async function uploadImageToSupabase(base64Data) {
             .from('player-photos')
             .getPublicUrl(filename);
 
-        console.log("✅ UploadImage: Success. URL:", urlData.publicUrl);
+
         return urlData.publicUrl;
 
     } catch (error) {
@@ -335,7 +335,7 @@ router.post("/register-player", async (req, res) => {
 
         // 5. Generate Player ID (Explicitly from Backend)
         // We call the database function we just created to get the next ID safely.
-        console.log("Generating Player ID...");
+
         const { data: newPlayerId, error: idError } = await supabaseAdmin
             .rpc('get_next_player_id');
 
@@ -343,7 +343,7 @@ router.post("/register-player", async (req, res) => {
             console.error("RPC Error:", idError);
             throw new Error("Failed to generate Player ID. Ensure 'get_next_player_id' function exists in DB.");
         }
-        console.log("Generated New Player ID:", newPlayerId);
+
 
         // 6. Insert into USERS table
         const newUserId = crypto.randomUUID();
@@ -378,12 +378,12 @@ router.post("/register-player", async (req, res) => {
 
         if (error) throw error;
 
-        console.log("✅ Registration Successful for:", user.email, "| Player ID:", user.player_id);
+
 
 
         // 7. Insert School Details (optional)
         if (schoolDetails) {
-            console.log("Inserting School Details for:", user.id);
+
             const { error: schoolError } = await supabaseAdmin
                 .from("player_school_details")
                 .insert({
@@ -402,7 +402,7 @@ router.post("/register-player", async (req, res) => {
         // 8. Insert Family Members (Optional)
         const familyMembers = req.body.familyMembers;
         if (familyMembers && Array.isArray(familyMembers) && familyMembers.length > 0) {
-            console.log("Inserting Family Members for:", user.id);
+
             const familyData = familyMembers.map(member => ({
                 user_id: user.id,
                 name: member.name,

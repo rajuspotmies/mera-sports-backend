@@ -236,7 +236,7 @@ router.get("/settings", verifyAdmin, async (req, res) => {
 router.post("/settings", verifyAdmin, async (req, res) => {
     try {
         const { platformName, supportEmail, supportPhone } = req.body;
-        console.log("Saving Settings - Body:", req.body); // DEBUG LOG
+
 
         const { data: settings, error } = await supabaseAdmin
             .from("platform_settings")
@@ -353,15 +353,15 @@ router.get("/dashboard-stats", verifyAdmin, async (req, res) => {
 // Bulk update transactions (verify or reject)
 router.post("/transactions/bulk-update", verifyAdmin, async (req, res) => {
     try {
-        console.log("BULK UPDATE REQUEST:", req.body); // DEBUG LOG
+
         const { ids, status } = req.body; // ids: string[], status: 'verified' | 'rejected'
 
         if (!ids || !Array.isArray(ids) || ids.length === 0) {
-            console.log("Invalid IDs:", ids);
+
             return res.status(400).json({ message: "Invalid IDs provided" });
         }
         if (!['verified', 'rejected'].includes(status)) {
-            console.log("Invalid Status:", status);
+
             return res.status(400).json({ message: "Invalid status" });
         }
 
@@ -376,7 +376,7 @@ router.post("/transactions/bulk-update", verifyAdmin, async (req, res) => {
             throw error;
         }
 
-        console.log(`Bulk Updated Rows: ${count}`);
+
 
         res.json({ success: true, message: `Transactions ${status}`, count });
     } catch (err) {

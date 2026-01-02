@@ -9,7 +9,7 @@ router.get("/settings", async (req, res) => {
     try {
         const { data: settings, error } = await supabaseAdmin
             .from("platform_settings")
-            .select("platform_name, logo_url, support_email, logo_size") // Only fetch necessary public fields
+            .select("platform_name, logo_url, support_email, support_phone, logo_size") // Only fetch necessary public fields
             .eq("id", 1)
             .single();
 

@@ -34,7 +34,7 @@ router.put("/:id/status", verifyAdmin, async (req, res) => {
 
         const { data, error } = await supabaseAdmin
             .from("contact_messages")
-            .update({ status, updated_at: new Date() })
+            .update({ status })
             .eq("id", id)
             .select()
             .single();

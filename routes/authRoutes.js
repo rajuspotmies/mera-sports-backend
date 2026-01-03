@@ -248,16 +248,17 @@ router.post("/check-conflict", async (req, res) => {
             return res.status(400).json({ message: "Mobile and Email are required for check." });
         }
 
-        let query = supabaseAdmin
-            .from("users")
-            .select("id")
-            .or(`mobile.eq.${mobile},email.eq.${email}`);
-
+        let query;
         if (aadhaar) {
             query = supabaseAdmin
                 .from("users")
-                .select("id")
+                .select("mobile, email, aadhaar")
                 .or(`mobile.eq.${mobile},email.eq.${email},aadhaar.eq.${aadhaar}`);
+        } else {
+            query = supabaseAdmin
+                .from("users")
+                .select("mobile, email, aadhaar")
+                .or(`mobile.eq.${mobile},email.eq.${email}`);
         }
 
         const { data: existing, error } = await query.maybeSingle();
@@ -265,7 +266,13 @@ router.post("/check-conflict", async (req, res) => {
         if (error) throw error;
 
         if (existing) {
-            return res.json({ conflict: true, message: "User with this Mobile, Email, or Aadhaar already exists." });
+            const conflicts = [];
+            if (existing.mobile == mobile) conflicts.push("Mobile");
+            if (existing.email == email) conflicts.push("Email");
+            if (aadhaar && existing.aadhaar == aadhaar) conflicts.push("Aadhaar");
+
+            const fieldStr = conflicts.length > 0 ? conflicts.join(' / ') : "Details";
+            return res.json({ conflict: true, message: `${fieldStr} already exists.` });
         }
 
         res.json({ conflict: false });

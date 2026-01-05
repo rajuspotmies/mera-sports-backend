@@ -3,7 +3,7 @@ import crypto from "crypto";
 import express from "express";
 import jwt from "jsonwebtoken";
 import { supabaseAdmin } from "../config/supabaseClient.js";
-import { sendRegistrationSuccessEmail } from "../utils/mailer.js";
+import { sendRegistrationSuccessEmail } from "../utils/mailer.js"; // RESTORED IMPORT
 // import bcrypt from "bcrypt"; // REMOVED per user request
 
 const router = express.Router();
@@ -27,7 +27,7 @@ router.post("/send-verification-otp", async (req, res) => {
             .from("users")
             .select("email, mobile")
             .eq("id", userId)
-            .single();
+            .maybeSingle();
 
         if (error || !user) return res.status(404).json({ message: "User not found" });
 
@@ -89,7 +89,7 @@ router.post("/verify-verification-otp", async (req, res) => {
             .from("users")
             .select("email")
             .eq("id", userId)
-            .single();
+            .maybeSingle();
 
         let verified = false;
 
@@ -185,58 +185,58 @@ async function uploadImageToSupabase(base64Data) {
     }
 }
 
-/* ================= OTP ROUTES (2FACTOR) ================= */
+/* ================= OTP ROUTES (SUPABASE EMAIL) ================= */
 router.post("/send-otp", async (req, res) => {
     try {
-        const { mobile } = req.body;
-        if (!mobile) return res.status(400).json({ message: "Mobile number is required" });
+        const { email } = req.body;
+        if (!email) return res.status(400).json({ message: "Email is required" });
 
-        const apiKey = process.env.TWO_FACTOR_API_KEY;
-        if (!apiKey) {
-            console.error("Missing TWO_FACTOR_API_KEY in env");
-            return res.status(500).json({ message: "Server configuration error" });
+        console.log(`Sending Registration OTP to ${email} via Supabase`);
+
+        const { error } = await supabaseAdmin.auth.signInWithOtp({
+            email: email,
+            // options: { shouldCreateUser: false } // Removed to allow new users
+        });
+
+        if (error) {
+            console.error("Supabase Send OTP Error:", error);
+            // Handle rate limits or other specific errors if needed
+            throw error;
         }
 
-        // Generate 6-digit OTP manually to enforce SMS channel (AUTOGEN sometimes defaults to voice)
-        const otp = Math.floor(100000 + Math.random() * 900000);
+        res.json({ success: true, message: "OTP sent to email" });
 
-        // Use the manual OTP endpoint: .../SMS/{mobile}/{otp}
-        // This sends the specific OTP via SMS and returns a session ID for verification
-        const url = `https://2factor.in/API/V1/${apiKey}/SMS/${mobile}/${otp}`;
-        console.log(`Sending Manual OTP ${otp} to ${mobile}`);
-
-        const response = await axios.get(url);
-
-        if (response.data && response.data.Status === "Success") {
-            res.json({ success: true, sessionId: response.data.Details });
-        } else {
-            console.error("2Factor API Error:", response.data);
-            res.status(400).json({ success: false, message: "Failed to send OTP" });
-        }
     } catch (err) {
         console.error("SEND OTP ERROR:", err.message);
-        res.status(500).json({ success: false, message: "Failed to send OTP" });
+        res.status(500).json({ success: false, message: "Failed to send OTP: " + err.message });
     }
 });
 
 router.post("/verify-otp", async (req, res) => {
     try {
-        const { sessionId, otp } = req.body;
-        if (!sessionId || !otp) return res.status(400).json({ message: "Session ID and OTP are required" });
+        const { email, otp } = req.body;
+        if (!email || !otp) return res.status(400).json({ message: "Email and OTP are required" });
 
-        const apiKey = process.env.TWO_FACTOR_API_KEY;
-        const url = `https://2factor.in/API/V1/${apiKey}/SMS/VERIFY/${sessionId}/${otp}`;
+        const { data, error } = await supabaseAdmin.auth.verifyOtp({
+            email,
+            token: otp,
+            type: 'magiclink' // 'email' or 'magiclink' depending on Supabase config, usually 'magiclink' for OTP
+        });
 
-        const response = await axios.get(url);
+        if (error) {
+            console.error("Supabase Verify OTP Error:", error);
+            return res.status(400).json({ success: false, message: "Invalid OTP or Session Expired" });
+        }
 
-        if (response.data && response.data.Status === "Success") {
+        if (data.session || data.user) {
             res.json({ success: true, message: "OTP Verified Successfully" });
         } else {
-            res.status(400).json({ success: false, message: "Invalid OTP" });
+            res.status(400).json({ success: false, message: "Verification failed" });
         }
+
     } catch (err) {
         console.error("VERIFY OTP ERROR:", err.message);
-        res.status(400).json({ success: false, message: "Invalid OTP or Session Expired" });
+        res.status(500).json({ success: false, message: "Server error during verification" });
     }
 });
 
@@ -382,7 +382,7 @@ router.post("/register-player", async (req, res) => {
                 gender: gender || null // Save gender
             })
             .select()
-            .single();
+            .maybeSingle();
 
         if (error) throw error;
 
@@ -391,19 +391,23 @@ router.post("/register-player", async (req, res) => {
 
         // 7. Insert School Details (optional)
         if (schoolDetails) {
+            try {
+                const { error: schoolError } = await supabaseAdmin
+                    .from("player_school_details")
+                    .insert({
+                        player_id: user.id,
+                        school_name: schoolDetails.name,
+                        school_address: schoolDetails.address,
+                        school_city: schoolDetails.city,
+                        school_pincode: schoolDetails.pincode,
+                    });
 
-            const { error: schoolError } = await supabaseAdmin
-                .from("player_school_details")
-                .insert({
-                    player_id: user.id,
-                    school_name: schoolDetails.name,
-                    school_address: schoolDetails.address,
-                    school_city: schoolDetails.city,
-                    school_pincode: schoolDetails.pincode,
-                });
-
-            if (schoolError) {
-                console.error("SCHOOL DETAILS ERROR:", schoolError);
+                if (schoolError) {
+                    console.error("SCHOOL DETAILS ERROR (Non-fatal):", schoolError);
+                    // Continue even if this fails
+                }
+            } catch (schoolEx) {
+                console.error("School Details Exception:", schoolEx);
             }
         }
 
@@ -441,11 +445,16 @@ router.post("/register-player", async (req, res) => {
         );
 
         // SEND WELCOME EMAIL
-        await sendRegistrationSuccessEmail(user.email, {
-            name: user.name,
-            playerId: user.player_id,
-            password: password
-        });
+        try {
+            await sendRegistrationSuccessEmail(user.email, {
+                name: user.name,
+                playerId: user.player_id,
+                password: password
+            });
+        } catch (emailErr) {
+            console.error("Error sending welcome email:", emailErr.message);
+            // Do not fail registration
+        }
 
         res.json({
             success: true,
@@ -496,7 +505,7 @@ router.post("/login", async (req, res) => {
                 .or(`mobile.eq.${input},aadhaar.eq.${input},player_id.eq.${input}`);
         }
 
-        const { data: user, error } = await query.single();
+        const { data: user, error } = await query.maybeSingle();
 
         if (error || !user) {
             return res.status(401).json({ message: "Invalid credentials" });
@@ -573,7 +582,7 @@ router.post("/register-admin", async (req, res) => {
                 verification: 'pending' // Pending SuperAdmin approval
             })
             .select()
-            .single();
+            .maybeSingle();
 
         if (error) throw error;
 
@@ -599,7 +608,7 @@ router.post("/login-admin", async (req, res) => {
             .from("users")
             .select("*")
             .eq("email", email)
-            .single();
+            .maybeSingle();
 
         if (error || !user) {
             return res.status(401).json({ message: "Invalid credentials" });
@@ -679,7 +688,7 @@ router.get("/me", async (req, res) => {
             .from("users")
             .select("id, name, email, role, photos, verification")
             .eq("id", decoded.id)
-            .single();
+            .maybeSingle();
 
         if (error || !user) return res.status(404).json({ message: "User not found" });
 
@@ -722,7 +731,7 @@ router.post("/reapply-google-admin", async (req, res) => {
             .from("users")
             .select("*")
             .eq("email", email)
-            .single();
+            .maybeSingle();
 
         if (error || !user) {
             return res.status(404).json({ message: "User not found" });

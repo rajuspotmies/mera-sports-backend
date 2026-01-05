@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import dotenv from "dotenv";
+import jwt from "jsonwebtoken"; // Import to inspect key role
 
 dotenv.config();
 
@@ -13,8 +14,22 @@ if (!supabaseUrl || !serviceRoleKey) {
 } else {
     console.log("✅ Supabase Configuration Loaded");
     console.log("URL:", supabaseUrl);
-    // basic check if it looks like a JWT
-    if (serviceRoleKey.length < 20) console.warn("⚠️ Warning: Service Role Key looks suspiciously short.");
+
+    // DEBUG: Check Role
+    try {
+        const decoded = jwt.decode(serviceRoleKey);
+        if (decoded && decoded.role) {
+            console.log(`🔑 Key Role: [${decoded.role.toUpperCase()}]`);
+            if (decoded.role !== 'service_role') {
+                console.error("❌ CRITICAL: You are using the ANON KEY as Service Role Key!");
+                console.error("❌ RLS Bypassing will NOT work. Update SUPABASE_SERVICE_ROLE_KEY in .env");
+            } else {
+                console.log("✅ Service Role Key identified.");
+            }
+        }
+    } catch (e) {
+        console.warn("⚠️ Could not decode Service Key JWT");
+    }
 }
 
 /**
@@ -29,6 +44,11 @@ export const supabaseAdmin = createClient(
         auth: {
             autoRefreshToken: false,
             persistSession: false,
+        },
+        global: {
+            headers: {
+                Authorization: `Bearer ${serviceRoleKey}`,
+            },
         },
     }
 );

@@ -256,6 +256,63 @@ router.post("/verify-otp", async (req, res) => {
     }
 });
 
+/* ================= MOBILE OTP ROUTES (2FACTOR) ================= */
+router.post("/send-mobile-otp", async (req, res) => {
+    try {
+        const { mobile } = req.body;
+        if (!mobile) return res.status(400).json({ message: "Mobile number is required" });
+
+        const apiKey = process.env.TWO_FACTOR_API_KEY || "e6b3f27c-da5e-11f0-a6b2-0200cd936042"; // Fallback to provided key
+        if (!apiKey) {
+            console.error("Missing 2Factor API Key");
+            return res.status(500).json({ message: "Server configuration error" });
+        }
+
+        const otp = Math.floor(100000 + Math.random() * 900000);
+        const url = `https://2factor.in/API/V1/${apiKey}/SMS/${mobile}/${otp}`;
+
+        console.log(`Sending Mobile Verification OTP to ${mobile}`);
+        const response = await axios.get(url);
+
+        if (response.data && response.data.Status === "Success") {
+            // Return only session ID to frontend
+            res.json({ success: true, sessionId: response.data.Details, message: "OTP sent to mobile" });
+        } else {
+            console.error("2Factor Error:", response.data);
+            throw new Error("Failed to send SMS OTP");
+        }
+
+    } catch (err) {
+        console.error("SEND MOBILE OTP ERROR:", err.message);
+        res.status(500).json({ success: false, message: "Failed to send Mobile OTP" });
+    }
+});
+
+router.post("/verify-mobile-otp", async (req, res) => {
+    try {
+        const { mobile, otp, sessionId } = req.body;
+        if (!mobile || !otp || !sessionId) {
+            return res.status(400).json({ message: "Mobile, OTP and Session ID are required" });
+        }
+
+        const apiKey = process.env.TWO_FACTOR_API_KEY || "e6b3f27c-da5e-11f0-a6b2-0200cd936042";
+        const url = `https://2factor.in/API/V1/${apiKey}/SMS/VERIFY/${sessionId}/${otp}`;
+
+        console.log(`Verifying Mobile OTP for ${mobile}`);
+        const response = await axios.get(url);
+
+        if (response.data && response.data.Status === "Success") {
+            res.json({ success: true, message: "Mobile OTP Verified Successfully" });
+        } else {
+            res.status(400).json({ success: false, message: "Invalid Mobile OTP" });
+        }
+
+    } catch (err) {
+        console.error("VERIFY MOBILE OTP ERROR:", err.message);
+        res.status(500).json({ success: false, message: "Verification failed" });
+    }
+});
+
 /* ================= CHECK CONFLICT (PRE-OTP) ================= */
 router.post("/check-conflict", async (req, res) => {
     try {

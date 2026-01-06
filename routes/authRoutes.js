@@ -193,9 +193,25 @@ router.post("/send-otp", async (req, res) => {
 
         console.log(`Sending Registration OTP to ${email} via Supabase`);
 
+        // 1. Force Create User as Confirmed (this ensures they are "signed up" in Auth)
+        // This is crucial: if we just use signInWithOtp on a new email, Supabase treats it as a Signup and sends "Confirm your signup" link.
+        // We want the "Verification Code" (Magic Link) template. To get that, the user must already exist and be confirmed.
+        const { error: createError } = await supabaseAdmin.auth.admin.createUser({
+            email: email,
+            email_confirm: true, // Auto-confirm the user in Auth
+            password: crypto.randomUUID() // Random password (we use OTP anyway)
+        });
+
+        // Ignore "User already registered" error
+        if (createError && !createError.message.includes("already registered")) {
+            console.warn("Supabase Create User Warning:", createError.message);
+            // Proceed anyway, signInWithOtp might still work or will fail below
+        }
+
+        // 2. Send OTP (Magic Link)
         const { error } = await supabaseAdmin.auth.signInWithOtp({
             email: email,
-            // options: { shouldCreateUser: false } // Removed to allow new users
+            options: { shouldCreateUser: false } // We already created them or they exist
         });
 
         if (error) {

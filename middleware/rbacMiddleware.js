@@ -1,7 +1,7 @@
 import dotenv from "dotenv";
 import jwt from "jsonwebtoken";
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 // --------------------------------------------------------------------------
 // 1. Verify Admin (Supabase Auth)

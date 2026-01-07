@@ -1,0 +1,37 @@
+import { supabaseAdmin } from "../config/supabaseClient.js";
+
+export const getSettings = async (req, res) => {
+    try {
+        const { data: settings, error } = await supabaseAdmin.from("platform_settings").select("*").eq("id", 1).single();
+        if (error) throw error;
+        res.json({ success: true, settings });
+    } catch (err) {
+        console.error("GET SETTINGS ERROR:", err);
+        res.status(500).json({ message: "Failed to fetch settings" });
+    }
+};
+
+export const updateSettings = async (req, res) => {
+    try {
+        const { platformName, supportEmail, supportPhone, logoUrl, logoSize } = req.body;
+        const { data: settings, error } = await supabaseAdmin
+            .from("platform_settings")
+            .update({
+                platform_name: platformName,
+                support_email: supportEmail,
+                support_phone: supportPhone,
+                logo_url: logoUrl,
+                logo_size: logoSize,
+                updated_at: new Date()
+            })
+            .eq("id", 1)
+            .select()
+            .single();
+
+        if (error) throw error;
+        res.json({ success: true, settings });
+    } catch (err) {
+        console.error("UPDATE SETTINGS ERROR:", err);
+        res.status(500).json({ message: "Failed to update settings" });
+    }
+};

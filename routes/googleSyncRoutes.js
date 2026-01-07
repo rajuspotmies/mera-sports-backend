@@ -3,7 +3,7 @@ import express from "express";
 import jwt from "jsonwebtoken";
 import { supabaseAdmin } from "../config/supabaseClient.js";
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 const router = express.Router();
 

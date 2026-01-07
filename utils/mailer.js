@@ -1,7 +1,7 @@
 import dotenv from 'dotenv';
 import nodemailer from 'nodemailer';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 // Create Reusable Transporter
 const transporter = nodemailer.createTransport({
@@ -38,9 +38,15 @@ export const sendRegistrationEmail = async (toEmail, details) => {
                     <div style="background-color: #f9fafb; padding: 15px; border-radius: 6px; margin: 20px 0;">
                         <p style="margin: 5px 0;"><strong>Registration No:</strong> ${registrationNo}</p>
                         <p style="margin: 5px 0;"><strong>Event:</strong> ${eventName}</p>
-                        <p style="margin: 5px 0;"><strong>Categories:</strong> ${Array.isArray(category) ? category.map(c => c.name || c).join(', ') : category}</p>
+                        <p style="margin: 5px 0;"><strong>Categories:</strong> ${Array.isArray(category) ? category.map(c => {
+            if (typeof c === 'object') {
+                return `${c.name}${c.gender ? ` (${c.gender})` : ''}${c.matchType ? ` - ${c.matchType}` : ''}`;
+            }
+            return c;
+        }).join(', ') : category}</p>
                         <p style="margin: 5px 0;"><strong>Amount Paid:</strong> ₹${amount}</p>
                         <p style="margin: 5px 0;"><strong>Date:</strong> ${new Date(date).toLocaleDateString()}</p>
+                        <p style="margin: 5px 0;"><strong>Status:</strong> <span style="text-transform: uppercase;">${details.status || 'Verified'}</span></p>
                     </div>
 
                     <p>Please carry a digital or physical copy of this email to the venue for verification.</p>

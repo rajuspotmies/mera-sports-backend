@@ -22,6 +22,7 @@ export const updateSettings = async (req, res) => {
                 support_phone: supportPhone,
                 logo_url: logoUrl,
                 logo_size: logoSize,
+                registration_config: req.body.registrationConfig,
                 updated_at: new Date()
             })
             .eq("id", 1)

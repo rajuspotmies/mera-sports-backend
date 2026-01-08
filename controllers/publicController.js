@@ -5,7 +5,7 @@ export const getPublicSettings = async (req, res) => {
     try {
         const { data: settings, error } = await supabaseAdmin
             .from("platform_settings")
-            .select("platform_name, logo_url, support_email, support_phone, logo_size")
+            .select("platform_name, logo_url, support_email, support_phone, logo_size, registration_config")
             .eq("id", 1)
             .single();
 

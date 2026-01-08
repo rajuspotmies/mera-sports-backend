@@ -181,17 +181,24 @@ export const checkUserConflict = async (req, res) => {
                 .or(`mobile.eq.${mobile},email.eq.${email}`);
         }
 
-        const { data: existing, error } = await query.maybeSingle();
+        const { data: existingUsers, error } = await query;
         if (error) throw error;
 
-        if (existing) {
-            const conflicts = [];
-            if (existing.mobile == mobile) conflicts.push("Mobile");
-            if (existing.email == email) conflicts.push("Email");
-            if (aadhaar && existing.aadhaar == aadhaar) conflicts.push("Aadhaar");
+        if (existingUsers && existingUsers.length > 0) {
+            const conflicts = new Set();
+            existingUsers.forEach(user => {
+                if (user.mobile == mobile) conflicts.add("Mobile");
+                if (user.email == email) conflicts.add("Email");
+                if (aadhaar && user.aadhaar == aadhaar) conflicts.add("Aadhaar");
+            });
 
-            const fieldStr = conflicts.length > 0 ? conflicts.join(' / ') : "Details";
-            return res.json({ conflict: true, message: `${fieldStr} already exists.` });
+            const conflictList = Array.from(conflicts);
+            const fieldStr = conflictList.length > 0 ? conflictList.join(' / ') : "Details";
+            return res.json({
+                conflict: true,
+                conflicts: conflictList, // Send raw array for frontend
+                message: `${fieldStr} already exists.` // Fallback message
+            });
         }
 
         res.json({ conflict: false });
@@ -212,8 +219,15 @@ export const registerPlayer = async (req, res) => {
             aadhaar, schoolDetails, photos, isVerified, gender, familyMembers
         } = req.body;
 
-        if (!firstName || !lastName || !mobile || !dob || !email) {
-            return res.status(400).json({ message: "Missing required fields" });
+        const missing = [];
+        if (!firstName) missing.push("First Name");
+        if (!lastName) missing.push("Last Name");
+        if (!mobile) missing.push("Mobile");
+        if (!dob) missing.push("Date of Birth");
+        if (!email) missing.push("Email");
+
+        if (missing.length > 0) {
+            return res.status(400).json({ message: `Missing required fields: ${missing.join(', ')}` });
         }
 
         // 1. Calculate Age

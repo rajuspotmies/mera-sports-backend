@@ -170,10 +170,55 @@ export const deleteEvent = async (req, res) => {
 // GET /api/events/:id/brackets
 export const getEventBrackets = async (req, res) => {
     try {
-        const { data, error } = await supabaseAdmin.from('event_brackets').select('*').eq('event_id', req.params.id).order('created_at', { ascending: true });
-        if (error) throw error;
-        res.json({ success: true, brackets: data || [] });
-    } catch (err) { res.status(500).json({ message: err.message }); }
+        const eventId = req.params.id;
+        console.log("Fetching brackets for event_id:", eventId, "Type:", typeof eventId);
+        
+        // Convert event_id to number if possible (events table uses bigint)
+        const eventIdNum = parseInt(eventId, 10);
+        const eventIdQuery = !isNaN(eventIdNum) ? eventIdNum : eventId;
+        
+        const { data, error } = await supabaseAdmin
+            .from('event_brackets')
+            .select('id, event_id, category, round_name, draw_type, draw_data, pdf_url, created_at')
+            .eq('event_id', eventIdQuery)
+            .order('category', { ascending: true })
+            .order('round_name', { ascending: true })
+            .order('created_at', { ascending: true });
+        
+        if (error) {
+            console.error("Supabase error fetching brackets:", error);
+            throw error;
+        }
+        
+        console.log("Raw brackets from DB:", data?.length || 0, "brackets");
+        if (data && data.length > 0) {
+            console.log("Sample raw bracket:", JSON.stringify(data[0], null, 2));
+        }
+        
+        // Format brackets - return all brackets (frontend will handle filtering for display)
+        const formattedBrackets = (data || []).map(bracket => {
+            const drawType = bracket.draw_type || 'image';
+            const drawData = bracket.draw_data || {};
+            
+            return {
+                id: bracket.id,
+                event_id: bracket.event_id,
+                category: bracket.category || 'Unknown',
+                round_name: bracket.round_name || 'Round 1',
+                draw_type: drawType,
+                draw_data: drawData,
+                pdf_url: bracket.pdf_url || null,
+                created_at: bracket.created_at
+            };
+        });
+        
+        console.log("Formatted brackets count:", formattedBrackets.length);
+        
+        res.json({ success: true, brackets: formattedBrackets });
+    } catch (err) {
+        console.error("GET EVENT BRACKETS ERROR:", err);
+        res.status(500).json({ success: false, message: err.message, brackets: [] });
+    }
 };
 
 // GET /api/events/:id/sponsors

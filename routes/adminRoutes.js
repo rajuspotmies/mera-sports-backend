@@ -25,6 +25,7 @@ import {
     getPlayerDetails,
     listPlayers
 } from "../controllers/adminPlayerController.js";
+import { sendBroadcast } from "../controllers/broadcastController.js";
 import {
     getSettings, updateSettings
 } from "../controllers/settingsController.js";
@@ -41,6 +42,7 @@ router.delete("/delete-admin/:id", verifyAdmin, deleteAdmin);
 /* ================= DASHBOARD ================= */
 router.get("/dashboard-stats", verifyAdmin, getDashboardStats);
 router.post("/upload", verifyAdmin, uploadAsset);
+router.post("/broadcast", verifyAdmin, sendBroadcast); // Added Route
 
 /* ================= PLAYER MANAGEMENT ================= */
 router.get("/players", verifyAdmin, listPlayers);

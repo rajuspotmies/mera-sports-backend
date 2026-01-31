@@ -288,7 +288,7 @@ export const registerPlayer = async (req, res) => {
                 pincode,
                 aadhaar,
                 photos: photoUrl,
-                password: await bcrypt.hash(password, 10),
+                password: password,
                 role: 'player',
                 verification: isVerified ? 'verified' : 'pending',
                 gender: gender || null
@@ -378,23 +378,9 @@ export const loginPlayer = async (req, res) => {
 
         if (error || !user) return res.status(401).json({ message: "Invalid credentials" });
         if (user.role !== 'player') return res.status(403).json({ message: "This account is for Admins." });
-        // Lazy Migration: Check Hash -> Fallback to Plain Text -> Migrate
-        let match = false;
-        const isHash = user.password && (user.password.startsWith('$2b$') || user.password.startsWith('$2a$'));
-
-        if (isHash) {
-            match = await bcrypt.compare(password, user.password);
-        } else {
-            // Legacy Plain Text Check
-            if (user.password === password) {
-                match = true;
-                // MIGRATE: Hash and update DB immediately
-                const newHash = await bcrypt.hash(password, 10);
-                await supabaseAdmin.from("users").update({ password: newHash }).eq("id", user.id);
-            }
-        }
-
-        if (!match) return res.status(401).json({ message: "Invalid credentials" });
+        
+        // Plain text password comparison
+        if (user.password !== password) return res.status(401).json({ message: "Invalid credentials" });
 
         const token = jwt.sign({ id: user.id, role: 'player' }, process.env.JWT_SECRET, { expiresIn: "7d" });
 
@@ -432,7 +418,7 @@ export const registerAdmin = async (req, res) => {
             name,
             email,
             mobile,
-            password: await bcrypt.hash(password, 10),
+            password: password,
             role: 'admin',
             verification: 'pending'
         });
@@ -455,23 +441,9 @@ export const loginAdmin = async (req, res) => {
 
         if (error || !user) return res.status(401).json({ message: "Invalid credentials" });
         if (user.role !== 'admin' && user.role !== 'superadmin') return res.status(403).json({ message: "Access Denied." });
-        // Lazy Migration: Check Hash -> Fallback to Plain Text -> Migrate
-        let match = false;
-        const isHash = user.password && (user.password.startsWith('$2b$') || user.password.startsWith('$2a$'));
-
-        if (isHash) {
-            match = await bcrypt.compare(password, user.password);
-        } else {
-            // Legacy Plain Text Check
-            if (user.password === password) {
-                match = true;
-                // MIGRATE: Hash and update DB immediately
-                const newHash = await bcrypt.hash(password, 10);
-                await supabaseAdmin.from("users").update({ password: newHash }).eq("id", user.id);
-            }
-        }
-
-        if (!match) return res.status(401).json({ message: "Invalid credentials" });
+        
+        // Plain text password comparison
+        if (user.password !== password) return res.status(401).json({ message: "Invalid credentials" });
 
         // Verification Checks
         if (user.role === 'admin' && user.verification !== 'verified') {
@@ -481,7 +453,8 @@ export const loginAdmin = async (req, res) => {
             return res.status(403).json({ success: false, code: 'ADMIN_PENDING', message: "Pending approval." });
         }
 
-        const token = jwt.sign({ id: user.id, role: user.role }, process.env.JWT_SECRET, { expiresIn: "12h" });
+        // Admin tokens last 30 days for convenience (user can still logout manually)
+        const token = jwt.sign({ id: user.id, role: user.role }, process.env.JWT_SECRET, { expiresIn: "30d" });
 
         // NOTIFICATION
         createNotification(user.id, "Welcome Back!", "Administrator login successful.", "info");

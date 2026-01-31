@@ -16,7 +16,6 @@ export async function sendMobileOtp(mobile) {
         const otp = Math.floor(100000 + Math.random() * 900000);
         const url = `https://2factor.in/API/V1/${TWO_FACTOR_API_KEY}/SMS/${mobile}/${otp}`;
 
-        console.log(`Sending Mobile OTP to ${mobile}`);
         const response = await axios.get(url);
 
         if (response.data && response.data.Status === "Success") {
@@ -62,7 +61,6 @@ export async function sendEmailOtp(email) {
     if (!email) throw new Error("Email is required");
 
     try {
-        console.log(`Sending Email OTP to ${email}`);
 
         // Ensure user exists as "confirmed" so we get the correct OTP template if possible, 
         // or effectively "sign them in" to generate a token.

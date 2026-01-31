@@ -62,13 +62,16 @@ export const getEventDetails = async (req, res) => {
 // POST /api/events/create
 export const createEvent = async (req, res) => {
     try {
-        const { name, sport, start_date, banner_image, document_url, sponsors, ...rest } = req.body;
+        const { name, sport, start_date, banner_image, document_file, document_url, sponsors, ...rest } = req.body;
         if (!name || !sport || !start_date) return res.status(400).json({ message: "Missing required fields" });
 
         const created_by = req.user.id;
 
         const banner_url = await uploadBase64(banner_image, 'event-assets', 'banners');
-        const uploadedDocUrl = await uploadBase64(document_url, 'event-documents', 'docs');
+        // Only upload document if document_file is provided (frontend sends document_file, not document_url)
+        const uploadedDocUrl = (document_file && document_file.startsWith('data:'))
+            ? await uploadBase64(document_file, 'event-documents', 'docs')
+            : (document_url || null);
         const payment_qr_image = await uploadBase64(req.body.payment_qr_image, 'event-assets', 'payment-qrs');
 
         let processedSponsors = [];
@@ -122,8 +125,16 @@ export const updateEvent = async (req, res) => {
         if (updates.payment_qr_image?.startsWith('data:')) {
             updates.payment_qr_image = await uploadBase64(updates.payment_qr_image, 'event-assets', 'payment-qrs');
         }
-        if (updates.document_file) {
-            updates.document_url = await uploadBase64(updates.document_file, 'event-documents', 'docs');
+        // Handle document_file upload (only if provided and is base64)
+        if (updates.document_file !== undefined) {
+            if (updates.document_file && updates.document_file.startsWith('data:')) {
+                // Upload new document
+                updates.document_url = await uploadBase64(updates.document_file, 'event-documents', 'docs');
+            } else if (updates.document_file === null) {
+                // Explicitly remove document
+                updates.document_url = null;
+            }
+            // Always remove document_file from updates as it's not a DB column
             delete updates.document_file;
         }
 
@@ -138,8 +149,7 @@ export const updateEvent = async (req, res) => {
         ['start_date', 'end_date', 'registration_deadline'].forEach(f => { if (updates[f] === "") updates[f] = null; });
         delete updates.id; delete updates.created_at; delete updates.created_by;
 
-        // Always remove 'document_file' from updates as it is not a DB column
-        delete updates.document_file;
+        // document_file is already handled above (uploaded and converted to document_url, then deleted)
         delete updates.data; // Also remove potential junk
 
         const { data, error } = await supabaseAdmin.from('events').update(updates).eq('id', id).select().single();
@@ -171,35 +181,58 @@ export const deleteEvent = async (req, res) => {
 export const getEventBrackets = async (req, res) => {
     try {
         const eventId = req.params.id;
-        console.log("Fetching brackets for event_id:", eventId, "Type:", typeof eventId);
-        
+
         // Convert event_id to number if possible (events table uses bigint)
         const eventIdNum = parseInt(eventId, 10);
         const eventIdQuery = !isNaN(eventIdNum) ? eventIdNum : eventId;
-        
+
         const { data, error } = await supabaseAdmin
             .from('event_brackets')
-            .select('id, event_id, category, round_name, draw_type, draw_data, pdf_url, created_at')
+            .select('id, event_id, category, round_name, draw_type, draw_data, pdf_url, created_at, mode, bracket_data, published')
             .eq('event_id', eventIdQuery)
+            .neq('round_name', 'LEAGUE_PLACEHOLDER') // Exclude placeholder brackets for league matches
             .order('category', { ascending: true })
             .order('round_name', { ascending: true })
             .order('created_at', { ascending: true });
-        
+
         if (error) {
             console.error("Supabase error fetching brackets:", error);
             throw error;
         }
-        
-        console.log("Raw brackets from DB:", data?.length || 0, "brackets");
-        if (data && data.length > 0) {
-            console.log("Sample raw bracket:", JSON.stringify(data[0], null, 2));
-        }
-        
-        // Format brackets - return all brackets (frontend will handle filtering for display)
-        const formattedBrackets = (data || []).map(bracket => {
-            const drawType = bracket.draw_type || 'image';
-            const drawData = bracket.draw_data || {};
-            
+
+        // Filter out placeholder brackets only
+        // For now, show all brackets except LEAGUE_PLACEHOLDER
+        // Published filtering can be added later if needed, but for now show all to debug
+        const visibleBrackets = (data || []).filter(bracket => {
+            // Exclude LEAGUE_PLACEHOLDER brackets (already filtered in query, but double-check)
+            if (bracket.round_name === 'LEAGUE_PLACEHOLDER') {
+                return false;
+            }
+            // Include all other brackets (we'll filter by published status later if needed)
+            return true;
+        });
+
+        // Filter by published status
+        const publishedBrackets = visibleBrackets.filter(bracket => {
+            // Include if published is true, or if published field doesn't exist (backward compatibility)
+            // If explicitly false, exclude it.
+            return bracket.published !== false;
+        });
+
+        // Format brackets - return visible brackets (frontend will handle additional filtering for display)
+        const formattedBrackets = publishedBrackets.map(bracket => {
+            const mode = bracket.mode || null;
+            const fullBracketData = bracket.bracket_data || null;
+
+            // Prefer full bracket_data for BRACKET mode; otherwise fall back to legacy draw_data
+            let drawType = bracket.draw_type || (mode === "BRACKET" ? "bracket" : "image");
+            let drawData = bracket.draw_data || {};
+
+            if (mode === "BRACKET" && fullBracketData) {
+                drawType = "bracket";
+                drawData = fullBracketData;
+            }
+
             return {
                 id: bracket.id,
                 event_id: bracket.event_id,
@@ -208,12 +241,14 @@ export const getEventBrackets = async (req, res) => {
                 draw_type: drawType,
                 draw_data: drawData,
                 pdf_url: bracket.pdf_url || null,
-                created_at: bracket.created_at
+                created_at: bracket.created_at,
+                mode,
+                bracket_data: fullBracketData,
+                published: bracket.published // Explicitly return published status (useful for frontend debugging)
             };
         });
-        
-        console.log("Formatted brackets count:", formattedBrackets.length);
-        
+
+
         res.json({ success: true, brackets: formattedBrackets });
     } catch (err) {
         console.error("GET EVENT BRACKETS ERROR:", err);

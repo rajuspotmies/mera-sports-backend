@@ -58,7 +58,6 @@ export const verifyPlayer = (req, res, next) => {
 
         // Enforce Strict Role Check
         if (!decoded.role || decoded.role !== 'player') {
-            console.warn(`Access denied: User ${decoded.id} with role ${decoded.role} tried to access player route.`);
             return res.status(403).json({ error: "Access denied: Restricted to Players only." });
         }
 

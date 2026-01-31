@@ -43,6 +43,7 @@ export const submitManualPayment = async (req, res) => {
             manual_transaction_id: transactionId || null,
             team_id: teamId || null,
             document_url: documentUrl,
+            status: 'pending_verification'
         });
 
         if (regError) {

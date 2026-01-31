@@ -11,7 +11,6 @@ export const sendBroadcast = async (req, res) => {
             return res.status(400).json({ message: "Invalid payload: title, message, and recipients array required." });
         }
 
-        console.log(`[BROADCAST] Starting broadcast: "${title}" to ${recipients.length} recipients.`);
 
         let imageUrl = null;
         if (image && image.startsWith('data:')) {
@@ -65,7 +64,6 @@ export const sendBroadcast = async (req, res) => {
 
         if (logError) console.error("Failed to log broadcast history:", logError);
 
-        console.log(`[BROADCAST] Completed. Success: ${successCount}, Failed: ${failureCount}`);
 
         res.json({
             success: true,

@@ -5,9 +5,12 @@ import adminRoutes from "./routes/adminRoutes.js"; // Added Admin Routes
 import advertisementRoutes from "./routes/advertisementRoutes.js";
 import apartmentRoutes from "./routes/apartmentRoutes.js";
 import authRoutes from "./routes/authRoutes.js";
+import bracketRoutes from "./routes/bracketRoutes.js";
 import contactRoutes from "./routes/contactRoutes.js";
 import eventRoutes from "./routes/eventRoutes.js";
 import googleSyncRoutes from "./routes/googleSyncRoutes.js";
+import matchRoutes from "./routes/matchRoutes.js";
+import leagueRoutes from "./routes/leagueRoutes.js";
 import notificationRoutes from "./routes/notificationRoutes.js"; // Added Notification Routes Import
 import paymentRoutes from "./routes/paymentRoutes.js"; // Added Payment Routes
 import playerDashboardRoutes from "./routes/playerDashboardroutes.js";
@@ -28,7 +31,10 @@ app.use("/api/auth", authRoutes);
 app.use("/api/auth", googleSyncRoutes);
 app.use("/api/events", eventRoutes);
 app.use("/api/payment", paymentRoutes); // Mounted Payment Routes
+app.use("/api/admin/matches", matchRoutes); // Scoreboard Matches Routes (Prioritized)
+app.use("/api/admin", bracketRoutes); // Bracket Management Routes (Prioritized)
 app.use("/api/admin", adminRoutes);
+app.use("/api/admin", leagueRoutes); // League (round-robin) configuration routes
 app.use("/api/advertisements", advertisementRoutes);
 app.use("/api/apartments", apartmentRoutes);
 app.use("/api/teams", teamRoutes);

@@ -133,7 +133,6 @@ router.post('/sync', async (req, res) => {
                 console.error('CRITICAL DATABASE ERROR:', dbError);
                 return res.status(500).json({ error: 'Failed to save user', details: dbError });
             }
-            console.log("✅ Admin Sync Saved Successfully:", savedUser.id);
             finalUser = savedUser;
         }
 
@@ -152,10 +151,11 @@ router.post('/sync', async (req, res) => {
         }
 
         // 5. Generate Backend Token (consistent with login-admin)
+        // Admin tokens last 30 days for convenience (user can still logout manually)
         const backendToken = jwt.sign(
             { id: finalUser.id, role: finalUser.role },
             process.env.JWT_SECRET,
-            { expiresIn: "12h" }
+            { expiresIn: "30d" }
         );
 
         // 6. Return the user data AND token to frontend

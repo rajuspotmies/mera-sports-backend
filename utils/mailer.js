@@ -61,7 +61,6 @@ export const sendRegistrationEmail = async (toEmail, details) => {
 
     try {
         const info = await transporter.sendMail(mailOptions);
-        console.log("Email sent: " + info.response);
         return true;
     } catch (error) {
         console.error("Error sending email:", error);
@@ -115,7 +114,6 @@ export const sendRegistrationSuccessEmail = async (toEmail, details) => {
 
     try {
         const info = await transporter.sendMail(mailOptions);
-        console.log("Welcome Email sent: " + info.response);
         return true;
     } catch (error) {
         console.error("Error sending welcome email:", error);

@@ -378,6 +378,8 @@ export const loginPlayer = async (req, res) => {
 
         if (error || !user) return res.status(401).json({ message: "Invalid credentials" });
         if (user.role !== 'player') return res.status(403).json({ message: "This account is for Admins." });
+        
+        // Plain text password comparison
         if (user.password !== password) return res.status(401).json({ message: "Invalid credentials" });
 
         const token = jwt.sign({ id: user.id, role: 'player' }, process.env.JWT_SECRET, { expiresIn: "7d" });
@@ -416,7 +418,7 @@ export const registerAdmin = async (req, res) => {
             name,
             email,
             mobile,
-            password,
+            password: password,
             role: 'admin',
             verification: 'pending'
         });
@@ -439,6 +441,8 @@ export const loginAdmin = async (req, res) => {
 
         if (error || !user) return res.status(401).json({ message: "Invalid credentials" });
         if (user.role !== 'admin' && user.role !== 'superadmin') return res.status(403).json({ message: "Access Denied." });
+        
+        // Plain text password comparison
         if (user.password !== password) return res.status(401).json({ message: "Invalid credentials" });
 
         // Verification Checks
@@ -449,7 +453,8 @@ export const loginAdmin = async (req, res) => {
             return res.status(403).json({ success: false, code: 'ADMIN_PENDING', message: "Pending approval." });
         }
 
-        const token = jwt.sign({ id: user.id, role: user.role }, process.env.JWT_SECRET, { expiresIn: "12h" });
+        // Admin tokens last 30 days for convenience (user can still logout manually)
+        const token = jwt.sign({ id: user.id, role: user.role }, process.env.JWT_SECRET, { expiresIn: "30d" });
 
         // NOTIFICATION
         createNotification(user.id, "Welcome Back!", "Administrator login successful.", "info");

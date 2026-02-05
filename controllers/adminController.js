@@ -4,7 +4,7 @@ import { uploadBase64 } from "../utils/uploadHelper.js";
 // GET /api/admin/list-admins
 export const listAdmins = async (req, res) => {
     try {
-        const { data: admins, error } = await supabaseAdmin.from("users").select("id, name, email, role, verification").eq("role", "admin").eq("verification", "verified");
+        const { data: admins, error } = await supabaseAdmin.from("users").select("id, name, email, role, verification").eq("role", "admin");
         if (error) throw error;
         res.json({ success: true, admins });
     } catch (err) {

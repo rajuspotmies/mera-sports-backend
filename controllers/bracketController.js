@@ -392,7 +392,7 @@ export const uploadCategoryMedia = async (req, res) => {
 export const updateBracketMatch = async (req, res) => {
     try {
         const { id: eventId, categoryId } = req.params;
-        const { categoryLabel, roundName, matchId, player1, player2, matchIndex, deleteMatch } = req.body;
+        const { categoryLabel, roundName, matchId, player1, player2, matchIndex, deleteMatch, updatePlayerRanks, playerRanks } = req.body;
 
         if (!eventId || (!categoryId && !categoryLabel)) {
             return res.status(400).json({ message: "Event ID and Category required" });
@@ -420,6 +420,37 @@ export const updateBracketMatch = async (req, res) => {
 
         const bracket = brackets[0];
         const bracketData = bracket.bracket_data || { rounds: [], players: [] };
+
+        // Handle player ranks update
+        if (updatePlayerRanks === true && playerRanks !== undefined) {
+            bracketData.playerRanks = playerRanks;
+            
+            // Also store enableRanking toggle state if provided
+            if (req.body.enableRanking !== undefined) {
+                bracketData.enableRanking = req.body.enableRanking;
+            }
+            
+            const { data, error } = await supabaseAdmin
+                .from("event_brackets")
+                .update({
+                    round_name: bracket.round_name || LEGACY_ROUND_NAME_BRACKET,
+                    draw_type: "bracket",
+                    draw_data: bracketData,
+                    bracket_data: bracketData,
+                    updated_at: new Date().toISOString()
+                })
+                .eq("id", bracket.id)
+                .select()
+                .maybeSingle();
+
+            if (error) throw error;
+
+            return res.json({
+                success: true,
+                bracket: data,
+                message: "Player ranks updated successfully"
+            });
+        }
 
         // Find round
         let roundIndex = bracketData.rounds.findIndex(r => r.name === roundName);
@@ -683,7 +714,7 @@ export const setMatchResult = async (req, res) => {
 export const addBracketRound = async (req, res) => {
     try {
         const { id: eventId, categoryId } = req.params;
-        const { categoryLabel, autoSeed = true } = req.body;
+        const { categoryLabel, autoSeed = true, roundName } = req.body;
 
         if (!eventId || (!categoryId && !categoryLabel)) {
             return res.status(400).json({ message: "Event ID and Category required" });
@@ -715,9 +746,20 @@ export const addBracketRound = async (req, res) => {
         const bracketData = bracket.bracket_data || { rounds: [], players: [] };
         const currentRounds = Array.isArray(bracketData.rounds) ? bracketData.rounds : [];
 
-        // If no rounds exist, create Round 1 (empty matches; admin will add matches + players or use Auto Seed)
+        // Helper: choose the effective name for the new round.
+        // - If admin provided `roundName` from UI, prefer that.
+        // - Otherwise fall back to inferred label based on match count (existing behavior).
+        const getNextRoundName = (nextMatchCount, fallbackIndex) => {
+            if (roundName && typeof roundName === "string" && roundName.trim()) {
+                return roundName.trim();
+            }
+            return inferRoundLabelFromMatchCount(nextMatchCount, fallbackIndex);
+        };
+
+        // If no rounds exist, create first round with explicit/derived name
         if (currentRounds.length === 0) {
-            currentRounds.push({ name: "Round 1", matches: [] });
+            const initialName = getNextRoundName(0, 0) || "Round 1";
+            currentRounds.push({ name: initialName, matches: [] });
         } else {
             const prevRound = currentRounds[currentRounds.length - 1];
             const prevMatches = Array.isArray(prevRound.matches) ? prevRound.matches : [];
@@ -790,7 +832,7 @@ export const addBracketRound = async (req, res) => {
             }
 
             const nextMatchCount = Math.max(1, Math.ceil(prevMatches.length / 2));
-            const nextName = inferRoundLabelFromMatchCount(nextMatchCount, currentRounds.length);
+            const nextName = getNextRoundName(nextMatchCount, currentRounds.length);
 
             const nextRound = {
                 name: nextName,

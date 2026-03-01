@@ -15,6 +15,7 @@ export async function updateBrandProfileHandler(req: Request, res: Response): Pr
 
 export async function uploadBrandLogoHandler(req: Request, res: Response): Promise<void> {
   if (!req.file) throw new BadRequestError('No file uploaded');
-  const result = await brandService.updateBrandLogo(req.user.sub, req.file.filename);
+  const fileUrl = (req.file as any).location || (req.file as any).key; // Fallbacks for multer-s3
+  const result = await brandService.updateBrandLogo(req.user.sub, fileUrl);
   sendSuccess(res, result);
 }

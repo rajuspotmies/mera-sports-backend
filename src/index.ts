@@ -4,7 +4,6 @@ import { initSocketServer } from './socket';
 import { env } from './config/env';
 import { checkDatabaseConnection } from './config/database';
 import { checkRedisConnection } from './config/redis';
-import { ensureUploadDirs } from './config/storage';
 import { logger } from './shared/utils/logger';
 import { startWorkers } from './jobs';
 
@@ -26,9 +25,6 @@ async function main() {
   } catch (err) {
     logger.warn('Redis connection failed — some features may be limited', { err });
   }
-
-  ensureUploadDirs();
-  logger.info(`Upload directories ready at ${env.UPLOAD_PATH}`);
 
   // Start background workers
   startWorkers();

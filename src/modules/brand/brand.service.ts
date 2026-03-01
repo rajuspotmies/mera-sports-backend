@@ -2,7 +2,6 @@ import { eq } from 'drizzle-orm';
 import { db } from '@/db';
 import { brandProfiles, users } from '@/db/schema';
 import { NotFoundError } from '@/shared/errors';
-import { getFileUrl } from '@/config/storage';
 import type { UpdateBrandDTO } from './brand.schema';
 
 export async function getBrandProfile(userId: string) {
@@ -53,7 +52,7 @@ export async function updateBrandProfile(userId: string, dto: UpdateBrandDTO) {
   return updated;
 }
 
-export async function updateBrandLogo(userId: string, filename: string) {
+export async function updateBrandLogo(userId: string, logoUrl: string) {
   const [brand] = await db
     .select({ id: brandProfiles.id })
     .from(brandProfiles)
@@ -62,7 +61,6 @@ export async function updateBrandLogo(userId: string, filename: string) {
 
   if (!brand) throw new NotFoundError('Brand profile');
 
-  const logoUrl = getFileUrl('logos', filename);
   const [updated] = await db
     .update(brandProfiles)
     .set({ brandLogoUrl: logoUrl, updatedAt: new Date() })

@@ -51,6 +51,7 @@ export async function closeCampaignHandler(req: Request, res: Response): Promise
 
 export async function uploadThumbnailHandler(req: Request, res: Response): Promise<void> {
   if (!req.file) throw new BadRequestError('No file uploaded');
-  const result = await campaignsService.updateCampaignThumbnail(req.params.id, req.user, req.file.filename);
+  const fileUrl = (req.file as any).location || (req.file as any).key; // Fallbacks for multer-s3
+  const result = await campaignsService.updateCampaignThumbnail(req.params.id, req.user, fileUrl);
   sendSuccess(res, result);
 }

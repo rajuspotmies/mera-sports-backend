@@ -4,8 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsup",
-    "prestart": "tsc drizzle.config.ts --esModuleInterop && pnpm db:push",
+    "build": "tsup && tsc drizzle.config.ts --esModuleInterop",
+    "prestart": "pnpm db:push",
     "start": "node dist/index.js",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",

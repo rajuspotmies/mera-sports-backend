@@ -1,0 +1,51 @@
+import { z } from 'zod';
+
+export const updateInfluencerProfileSchema = z.object({
+  handle: z.string().max(100).optional(),
+  bio: z.string().max(2000).optional(),
+  location: z.string().max(255).optional(),
+  niches: z.array(z.string()).optional(),
+  tier: z.enum(['nano', 'micro', 'mid', 'macro', 'mega']).optional(),
+  followerCount: z.number().int().min(0).optional(),
+  engagementRate: z.number().min(0).max(100).optional(),
+  platforms: z
+    .array(
+      z.object({
+        platform: z.string(),
+        handle: z.string(),
+        followers: z.number().int().min(0),
+      })
+    )
+    .optional(),
+  rateCard: z.record(z.string(), z.number().min(0)).optional(),
+  portfolioUrls: z.array(z.string().url()).optional(),
+});
+
+export const searchInfluencersSchema = z.object({
+  q: z.string().optional(),
+  niche: z.union([z.string(), z.array(z.string())]).optional(),
+  tier: z.union([z.string(), z.array(z.string())]).optional(),
+  location: z.string().optional(),
+  minFollowers: z.coerce.number().optional(),
+  maxFollowers: z.coerce.number().optional(),
+  minEngagement: z.coerce.number().optional(),
+  page: z.coerce.number().default(1),
+  limit: z.coerce.number().default(20),
+});
+
+export const inviteInfluencerSchema = z.object({
+  influencerId: z.string().uuid(),
+  campaignId: z.string().uuid(),
+  message: z.string().max(500).optional(),
+});
+
+export const bulkInviteSchema = z.object({
+  influencerIds: z.array(z.string().uuid()).min(1).max(50),
+  campaignId: z.string().uuid(),
+  message: z.string().max(500).optional(),
+});
+
+export type UpdateInfluencerProfileDTO = z.infer<typeof updateInfluencerProfileSchema>;
+export type SearchInfluencersQuery = z.infer<typeof searchInfluencersSchema>;
+export type InviteInfluencerDTO = z.infer<typeof inviteInfluencerSchema>;
+export type BulkInviteDTO = z.infer<typeof bulkInviteSchema>;

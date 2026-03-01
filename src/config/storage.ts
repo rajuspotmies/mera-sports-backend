@@ -1,8 +1,4 @@
-import path from 'path';
-import fs from 'fs';
 import { env } from './env';
-
-export const UPLOAD_ROOT = env.UPLOAD_PATH;
 
 export const UPLOAD_FOLDERS = {
   avatars: 'avatars',
@@ -31,13 +27,3 @@ export const MAX_FILE_SIZES: Record<UploadFolder, number> = {
   scripts: 10 * 1024 * 1024,     // 10MB
   submissions: 50 * 1024 * 1024, // 50MB
 };
-
-export function ensureUploadDirs(): void {
-  Object.values(UPLOAD_FOLDERS).forEach((folder) => {
-    fs.mkdirSync(path.join(UPLOAD_ROOT, folder), { recursive: true });
-  });
-}
-
-export function getFileUrl(folder: UploadFolder, filename: string): string {
-  return `/files/${folder}/${filename}`;
-}

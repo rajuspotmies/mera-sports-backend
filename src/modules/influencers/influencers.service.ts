@@ -76,10 +76,10 @@ export async function updateOwnInfluencerProfile(
   return updated;
 }
 
-export async function updateInfluencerAvatar(userId: string, filename: string) {
+export async function updateInfluencerAvatar(userId: string, avatarUrl: string) {
   const [updated] = await db
     .update(users)
-    .set({ avatarUrl: `/files/avatars/${filename}`, updatedAt: new Date() })
+    .set({ avatarUrl, updatedAt: new Date() })
     .where(eq(users.id, userId))
     .returning({ avatarUrl: users.avatarUrl });
 

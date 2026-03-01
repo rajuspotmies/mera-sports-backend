@@ -26,8 +26,8 @@ export async function listCampaignsForBrand(brandUser: JWTPayload, query: ListCa
     query.sort === 'deadline'
       ? asc(campaigns.deadline)
       : query.sort === 'progress'
-      ? desc(campaigns.progress)
-      : desc(campaigns.createdAt);
+        ? desc(campaigns.progress)
+        : desc(campaigns.createdAt);
 
   const rows = await db
     .select()
@@ -233,13 +233,13 @@ export async function closeCampaign(id: string, brandUser: JWTPayload): Promise<
 export async function updateCampaignThumbnail(
   id: string,
   brandUser: JWTPayload,
-  filename: string
+  thumbnailUrl: string
 ): Promise<Campaign> {
   await assertOwnership(id, brandUser);
 
   const [updated] = await db
     .update(campaigns)
-    .set({ thumbnailUrl: `/files/submissions/${filename}`, updatedAt: new Date() })
+    .set({ thumbnailUrl, updatedAt: new Date() })
     .where(eq(campaigns.id, id))
     .returning();
 

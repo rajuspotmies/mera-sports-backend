@@ -3,7 +3,6 @@ import { db } from '@/db';
 import { scriptVersions, campaignInfluencers, campaigns } from '@/db/schema';
 import { NotFoundError, ForbiddenError, BadRequestError } from '@/shared/errors';
 import type { JWTPayload } from '@/shared/types/api';
-import { getFileUrl } from '@/config/storage';
 
 export async function listScriptsForCampaign(campaignId: string, brandUser: JWTPayload) {
   await assertBrandOwnsCampaign(campaignId, brandUser);
@@ -20,7 +19,7 @@ export async function listScriptsForCampaign(campaignId: string, brandUser: JWTP
 export async function submitScript(
   campaignId: string,
   influencerUser: JWTPayload,
-  filename: string,
+  fileUrl: string,
   originalName: string
 ) {
   if (!influencerUser.influencerId) throw new ForbiddenError('Influencer profile not found');
@@ -49,8 +48,6 @@ export async function submitScript(
     .orderBy(scriptVersions.versionNumber);
 
   const nextVersion = existing.length > 0 ? Math.max(...existing.map((e) => e.versionNumber)) + 1 : 1;
-
-  const fileUrl = getFileUrl('scripts', filename);
 
   const [script] = await db
     .insert(scriptVersions)

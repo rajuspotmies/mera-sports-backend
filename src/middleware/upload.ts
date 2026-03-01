@@ -1,22 +1,28 @@
 import multer from 'multer';
 import path from 'path';
+import multerS3 from 'multer-s3';
 import {
-  UPLOAD_ROOT,
   ALLOWED_MIME_TYPES,
   MAX_FILE_SIZES,
   type UploadFolder,
 } from '@/config/storage';
 import { AppError } from '@/shared/errors';
+import { s3Client } from '@/config/s3';
+import { env } from '@/config/env';
 
-const storage = multer.diskStorage({
-  destination: (req, _file, cb) => {
+const storage = multerS3({
+  s3: s3Client,
+  bucket: env.S3_BUCKET_NAME,
+  // Automatically generate content-type based on file rather than saving everything as generic binary
+  contentType: multerS3.AUTO_CONTENT_TYPE,
+  key: (req, file, cb) => {
+    // We already have `uploadFolder` injected in routes (e.g., 'avatars', 'thumbnails')
     const folder = (req.uploadFolder ?? 'misc') as UploadFolder;
-    cb(null, path.join(UPLOAD_ROOT, folder));
-  },
-  filename: (_req, file, cb) => {
     const ext = path.extname(file.originalname);
     const unique = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    cb(null, `${unique}${ext}`);
+
+    // Creates a simulated folder structure in the bucket: avatars/123456.jpg
+    cb(null, `${folder}/${unique}${ext}`);
   },
 });
 

@@ -3,7 +3,6 @@ import helmet from 'helmet';
 import cors from 'cors';
 import path from 'path';
 import { env } from './config/env';
-import { UPLOAD_ROOT } from './config/storage';
 import { errorHandler } from './middleware/errorHandler';
 import { apiLimiter } from './middleware/rateLimiter';
 
@@ -48,13 +47,7 @@ export function createApp() {
   app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
   // ─── Static file serving (uploaded files) ─────────────────────────────────
-  app.use(
-    '/files',
-    express.static(UPLOAD_ROOT, {
-      maxAge: '7d',
-      etag: true,
-    })
-  );
+  // No longer needed: files are served directly from S3 / Railway Buckets
 
   // ─── Health check (no auth, no rate limit) ───────────────────────────────
   app.get('/health', (_req, res) => {

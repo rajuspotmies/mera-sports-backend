@@ -19,9 +19,11 @@ COPY package.json pnpm-lock.yaml* ./
 RUN pnpm install --prod --frozen-lockfile
 
 COPY --from=builder /app/dist ./dist
+COPY drizzle.config.js ./
+COPY src/db/schema ./src/db/schema
 
 # Create upload dirs (Railway volume takes precedence when mounted)
 RUN mkdir -p /data/uploads/avatars /data/uploads/scripts /data/uploads/submissions /data/uploads/logos
 
 EXPOSE 3000
-CMD ["node", "dist/index.js"]
+CMD ["pnpm", "start"]

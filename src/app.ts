@@ -35,7 +35,7 @@ export function createApp() {
 
   app.use(
     cors({
-      origin: env.FRONTEND_URL,
+      origin: env.FRONTEND_URLS,
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
       allowedHeaders: ['Content-Type', 'Authorization'],

@@ -1655,7 +1655,7 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, next) => {
 # Server
 NODE_ENV=production
 PORT=3000
-FRONTEND_URL=https://your-frontend.railway.app
+FRONTEND_URLS=http://localhost:8080,http://localhost:5173
 
 # Database — Railway provides this automatically when you add a Postgres plugin
 # Copy from Railway dashboard: Postgres → Connect → DATABASE_URL
@@ -1844,7 +1844,7 @@ Set these in Railway dashboard → Backend service → Variables:
 | Variable | Value |
 |----------|-------|
 | `NODE_ENV` | `production` |
-| `FRONTEND_URL` | your Vite frontend URL |
+| `FRONTEND_URLS` | comma-separated frontend URLs |
 | `DATABASE_URL` | auto-linked from Postgres plugin |
 | `REDIS_URL` | auto-linked from Redis plugin |
 | `JWT_SECRET` | generate: `openssl rand -hex 32` |

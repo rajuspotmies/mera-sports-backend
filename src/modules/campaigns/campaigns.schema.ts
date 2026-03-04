@@ -15,15 +15,17 @@ export const createCampaignSchema = z.object({
   type: z.enum(['influencer', 'ugc', 'meme', 'twitter']),
   visibility: z.enum(['private', 'public']).default('private'),
   objective: z.string().max(100).optional(),
+  status: z.enum(['draft', 'active']).optional(),
 
-  // Budget
-  budgetMode: z.enum(['paid', 'product', 'paid_product']),
+  // Old flat structure
+  budgetMode: z.enum(['paid', 'product', 'paid_product']).optional(),
   budgetTierPricing: z.array(tierPricingSchema).default([]),
-  budgetTotal: z.number().min(0).optional(),
-  platformFeePercent: z.number().min(0).max(100).optional(),
+  budgetTotal: z.coerce.number().min(0).optional(),
+  platformFeePercent: z.coerce.number().min(0).max(100).optional(),
 
   // Details
   location: z.string().max(255).optional(),
+  productLocation: z.string().max(255).optional(),
   niches: z.array(z.string()).default([]),
   creatorSizes: z.array(z.enum(['nano', 'micro', 'mid', 'macro', 'mega'])).default([]),
 
@@ -36,11 +38,46 @@ export const createCampaignSchema = z.object({
   deliverables: z.array(deliverableSchema).default([]),
   proofOfWorkReq: z.boolean().default(false),
 
-  deadline: z.string().datetime().optional(),
+  deadline: z.string().optional(),
+
+  // Optional Frontend Nested Payload Structure
+  budget: z.object({
+    mode: z.enum(['paid', 'product', 'paid_product']).optional(),
+    total: z.coerce.number().min(0).optional(),
+    platformFeePercent: z.coerce.number().min(0).max(100).optional(),
+    tierPricing: z.array(
+      z.object({
+        tier: z.enum(['nano', 'micro', 'mid', 'macro', 'mega']),
+        amount: z.coerce.number().min(0),
+      })
+    ).optional(),
+    strategy: z.string().optional(),
+    mixMode: z.boolean().optional(),
+    selectedTier: z.string().optional(),
+    creatorSizes: z.array(z.enum(['nano', 'micro', 'mid', 'macro', 'mega'])).optional(),
+    productDetails: z.string().optional(),
+  }).optional(),
+
+  requirements: z.object({
+    platform: z.string().optional(),
+    contentTypes: z.array(z.string()).optional(),
+    postingType: z.string().optional(),
+    brandGuidelines: z.string().optional(),
+    references: z.string().optional(),
+    scriptType: z.string().optional(),
+  }).optional(),
+
+  timeline: z.object({
+    applicationDeadline: z.string().optional(),
+    scriptDeadline: z.string().optional(),
+    workDeadline: z.string().optional(),
+  }).optional(),
+}).refine((data) => data.budgetMode || data.budget?.mode, {
+  message: "budget Mode is required",
+  path: ["budgetMode"]
 });
 
-export const updateCampaignSchema = createCampaignSchema.partial();
-
+export const updateCampaignSchema = createCampaignSchema;
 export const listCampaignsQuerySchema = z.object({
   status: z
     .enum(['draft', 'active', 'script', 'work', 'completed', 'closed', 'withdrawn'])

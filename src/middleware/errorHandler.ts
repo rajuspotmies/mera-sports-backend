@@ -10,11 +10,11 @@ export const errorHandler: ErrorRequestHandler = (
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   _next: NextFunction
 ) => {
-  // Log all errors
-  logger.error({
-    err,
-    req: { method: req.method, path: req.path, ip: req.ip },
-  });
+  // Log all errors — serialize properly to avoid [object Object]
+  const errMessage = err instanceof Error
+    ? `${err.message}${err.stack ? `\n${err.stack}` : ''}`
+    : JSON.stringify(err, null, 2);
+  logger.error(`${req.method} ${req.path} — ${errMessage}`);
 
   if (err instanceof AppError) {
     res.status(err.statusCode).json({

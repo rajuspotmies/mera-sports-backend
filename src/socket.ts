@@ -10,7 +10,7 @@ let io: SocketIOServer;
 export function initSocketServer(httpServer: HttpServer): SocketIOServer {
   io = new SocketIOServer(httpServer, {
     cors: {
-      origin: env.FRONTEND_URL,
+      origin: env.FRONTEND_URLS,
       methods: ['GET', 'POST'],
       credentials: true,
     },

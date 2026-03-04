@@ -18,8 +18,11 @@ const envSchema = z.object({
   JWT_EXPIRES_IN: z.string().default('15m'),
   REFRESH_TOKEN_EXPIRES_IN: z.string().default('30d'),
 
-  // CORS
-  FRONTEND_URL: z.string().default('http://localhost:5173'),
+  // CORS – comma-separated list, e.g. "http://localhost:8080,http://localhost:5173"
+  FRONTEND_URLS: z
+    .string()
+    .default('http://localhost:5173')
+    .transform((v) => v.split(',').map((u) => u.trim())),
 
   // Storage (S3 / Railway Buckets)
   S3_ENDPOINT_URL: z.string().optional(),

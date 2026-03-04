@@ -123,26 +123,28 @@ export async function createCampaign(brandUser: JWTPayload, dto: CreateCampaignD
     .insert(campaigns)
     .values({
       brandId: brandUser.brandId,
-      name: dto.name,
-      type: dto.type,
-      visibility: dto.visibility,
-      objective: dto.objective,
-      budgetMode: dto.budgetMode,
-      budgetTierPricing: dto.budgetTierPricing,
-      budgetTotal: dto.budgetTotal?.toString(),
-      platformFeePercent: dto.platformFeePercent?.toString(),
-      location: dto.location,
-      niches: dto.niches,
-      creatorSizes: dto.creatorSizes,
-      brief: dto.brief,
-      dos: dto.dos,
-      donts: dto.donts,
-      referenceUrls: dto.referenceUrls,
-      hashtags: dto.hashtags,
-      deliverables: dto.deliverables,
-      proofOfWorkReq: dto.proofOfWorkReq,
-      deadline: dto.deadline ? new Date(dto.deadline) : undefined,
-      status: 'draft',
+      name: dto.name || '',
+      type: dto.type || 'influencer',
+      visibility: dto.visibility || 'private',
+      objective: dto.objective || dto.budget?.productDetails,
+      budgetMode: dto.budgetMode || dto.budget?.mode || 'paid',
+      budgetTierPricing: (dto.budgetTierPricing && dto.budgetTierPricing.length > 0)
+        ? dto.budgetTierPricing
+        : (dto.budget?.tierPricing?.map(t => ({ tier: t.tier, rate: t.amount })) || []),
+      budgetTotal: (dto.budgetTotal ?? dto.budget?.total)?.toString(),
+      platformFeePercent: (dto.platformFeePercent ?? dto.budget?.platformFeePercent)?.toString() || '10',
+      location: dto.location || dto.productLocation,
+      niches: dto.niches || [],
+      creatorSizes: (dto.creatorSizes && dto.creatorSizes.length > 0) ? dto.creatorSizes : (dto.budget?.creatorSizes || []),
+      brief: dto.brief || dto.requirements?.brandGuidelines,
+      dos: dto.dos || [],
+      donts: dto.donts || [],
+      referenceUrls: (dto.referenceUrls && dto.referenceUrls.length > 0) ? dto.referenceUrls : (dto.requirements?.references ? dto.requirements.references.split('\n').filter(Boolean) : []),
+      hashtags: dto.hashtags || [],
+      deliverables: (dto.deliverables && dto.deliverables.length > 0) ? dto.deliverables : (dto.requirements?.contentTypes?.map(c => ({ type: c, count: 1 })) || []),
+      proofOfWorkReq: dto.proofOfWorkReq || false,
+      deadline: dto.deadline ? new Date(dto.deadline) : (dto.timeline?.applicationDeadline ? new Date(dto.timeline.applicationDeadline) : undefined),
+      status: dto.status || 'draft',
     })
     .returning();
 
@@ -162,15 +164,38 @@ export async function updateCampaign(
     throw new BadRequestError('Campaign can only be edited when in draft or active status');
   }
 
+  const mappedUpdate: any = {};
+  if (dto.name !== undefined) mappedUpdate.name = dto.name;
+  if (dto.type !== undefined) mappedUpdate.type = dto.type;
+  if (dto.visibility !== undefined) mappedUpdate.visibility = dto.visibility;
+  if (dto.status !== undefined) mappedUpdate.status = dto.status;
+  if (dto.objective !== undefined || dto.budget?.productDetails !== undefined) mappedUpdate.objective = dto.objective || dto.budget?.productDetails;
+  if (dto.budgetMode !== undefined || dto.budget?.mode !== undefined) mappedUpdate.budgetMode = dto.budgetMode || dto.budget?.mode;
+  if (dto.budgetTierPricing?.length || dto.budget?.tierPricing) mappedUpdate.budgetTierPricing = dto.budgetTierPricing?.length ? dto.budgetTierPricing : dto.budget?.tierPricing?.map(t => ({ tier: t.tier, rate: t.amount })) || [];
+  if (dto.budgetTotal !== undefined || dto.budget?.total !== undefined) mappedUpdate.budgetTotal = (dto.budgetTotal ?? dto.budget?.total)?.toString();
+  if (dto.platformFeePercent !== undefined || dto.budget?.platformFeePercent !== undefined) mappedUpdate.platformFeePercent = (dto.platformFeePercent ?? dto.budget?.platformFeePercent)?.toString();
+  if (dto.location !== undefined || dto.productLocation !== undefined) mappedUpdate.location = dto.location || dto.productLocation;
+  if (dto.niches !== undefined) mappedUpdate.niches = dto.niches;
+  if (dto.creatorSizes?.length || dto.budget?.creatorSizes) mappedUpdate.creatorSizes = dto.creatorSizes?.length ? dto.creatorSizes : dto.budget?.creatorSizes || [];
+  if (dto.brief !== undefined || dto.requirements?.brandGuidelines !== undefined) mappedUpdate.brief = dto.brief || dto.requirements?.brandGuidelines;
+  if (dto.dos !== undefined) mappedUpdate.dos = dto.dos;
+  if (dto.donts !== undefined) mappedUpdate.donts = dto.donts;
+  if (dto.referenceUrls?.length || dto.requirements?.references) mappedUpdate.referenceUrls = dto.referenceUrls?.length ? dto.referenceUrls : (dto.requirements?.references ? dto.requirements.references.split('\n').filter(Boolean) : []);
+  if (dto.hashtags !== undefined) mappedUpdate.hashtags = dto.hashtags;
+  if (dto.deliverables?.length || dto.requirements?.contentTypes) mappedUpdate.deliverables = dto.deliverables?.length ? dto.deliverables : dto.requirements?.contentTypes?.map(c => ({ type: c, count: 1 })) || [];
+  if (dto.proofOfWorkReq !== undefined) mappedUpdate.proofOfWorkReq = dto.proofOfWorkReq;
+  if (dto.deadline || dto.timeline?.applicationDeadline) {
+    const dl = dto.deadline || dto.timeline?.applicationDeadline;
+    mappedUpdate.deadline = dl ? new Date(dl) : undefined;
+  }
+  mappedUpdate.updatedAt = new Date();
+
+  // Make sure we remove undefined keys
+  Object.keys(mappedUpdate).forEach(key => mappedUpdate[key] === undefined && delete mappedUpdate[key]);
+
   const [updated] = await db
     .update(campaigns)
-    .set({
-      ...dto,
-      budgetTotal: dto.budgetTotal?.toString(),
-      platformFeePercent: dto.platformFeePercent?.toString(),
-      deadline: dto.deadline ? new Date(dto.deadline) : undefined,
-      updatedAt: new Date(),
-    })
+    .set(mappedUpdate)
     .where(eq(campaigns.id, id))
     .returning();
 

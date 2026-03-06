@@ -28,10 +28,8 @@ export async function razorpayWebhookHandler(req: Request, res: Response) {
         throw new AppError('MISSING_SIGNATURE', 'Razorpay signature is missing', 400);
     }
 
-    // The raw body is needed for signature verification
-    // But since we use express.json globally, we assume handleWebhook handles the already parsed body
-    // In a strict setup, we need the raw buffer, but for this boilerplate we'll pass the parsed body
-    await handleWebhook(req.body, signature);
+    // Use rawBody for secure signature verification if available
+    await handleWebhook(req.body, signature, req.rawBody);
 
     res.json({ status: 'ok' });
 }

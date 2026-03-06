@@ -1,9 +1,9 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
-import { eq, and, gt } from 'drizzle-orm';
+import { eq, and, gt, sql } from 'drizzle-orm';
 import { db } from '@/db';
-import { users, brandProfiles, influencerProfiles, refreshTokens } from '@/db/schema';
+import { users, brandProfiles, influencerProfiles, refreshTokens, campaigns, campaignInfluencers } from '@/db/schema';
 import { env } from '@/config/env';
 import {
   ConflictError,
@@ -12,7 +12,7 @@ import {
   BadRequestError,
 } from '@/shared/errors';
 import type { JWTPayload } from '@/shared/types/api';
-import type { RegisterDTO, LoginDTO } from './auth.schema';
+import type { RegisterDTO, LoginDTO, UpdateMeDTO } from './auth.schema';
 
 // ─── Token helpers ─────────────────────────────────────────────────────────
 
@@ -92,30 +92,45 @@ export async function register(dto: RegisterDTO) {
   });
   const refreshToken = await createRefreshToken(user.id);
 
+  const userPayload = {
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    role: user.role,
+    avatarUrl: user.avatarUrl,
+    brandId,
+    influencerId,
+    ...(dto.role === 'brand_owner' ? {
+      brandName: dto.brandName ?? dto.name,
+      industry: dto.industry,
+    } : {
+      handle: dto.handle,
+    }),
+  };
+
   return {
     accessToken,
     refreshToken,
-    user: {
-      id: user.id,
-      email: user.email,
-      name: user.name,
-      role: user.role,
-      avatarUrl: user.avatarUrl,
-      brandId,
-      influencerId,
-    },
+    user: userPayload,
   };
 }
 
 export async function login(dto: LoginDTO) {
   const [user] = await db.select().from(users).where(eq(users.email, dto.email)).limit(1);
 
-  if (!user || !user.isActive) {
+  if (!user) {
+    console.error(`[Auth] Login failed: User not found for email ${dto.email}`);
+    throw new UnauthorizedError('Invalid email or password');
+  }
+
+  if (!user.isActive) {
+    console.error(`[Auth] Login failed: User ${dto.email} is inactive`);
     throw new UnauthorizedError('Invalid email or password');
   }
 
   const passwordMatch = await bcrypt.compare(dto.password, user.passwordHash);
   if (!passwordMatch) {
+    console.error(`[Auth] Login failed: Password mismatch for user ${dto.email}`);
     throw new UnauthorizedError('Invalid email or password');
   }
 
@@ -147,18 +162,45 @@ export async function login(dto: LoginDTO) {
   });
   const refreshToken = await createRefreshToken(user.id);
 
+  const [userProfile]: any[] = user.role === 'brand_owner'
+    ? await db.select().from(brandProfiles).where(eq(brandProfiles.id, brandId!)).limit(1)
+    : user.role === 'influencer'
+      ? await db.select().from(influencerProfiles).where(eq(influencerProfiles.id, influencerId!)).limit(1)
+      : [null];
+
+  const userPayload = {
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    role: user.role,
+    avatarUrl: user.avatarUrl,
+    brandId,
+    influencerId,
+    ...(user.role === 'brand_owner' && userProfile ? {
+      brandName: userProfile.brandName,
+      brandType: userProfile.brandType,
+      brandLogoUrl: userProfile.brandLogoUrl,
+      industry: userProfile.industry,
+      website: userProfile.website,
+      city: userProfile.city,
+      primaryLanguage: userProfile.primaryLanguage,
+      otherLanguages: userProfile.otherLanguages,
+      bio: userProfile.description, // Map description to bio for frontend
+    } : {}),
+    ...(user.role === 'influencer' && userProfile ? {
+      handle: userProfile.handle,
+      bio: userProfile.bio,
+      location: userProfile.location,
+      niches: userProfile.niches,
+      tier: userProfile.tier,
+      followerCount: userProfile.followerCount,
+    } : {}),
+  };
+
   return {
     accessToken,
     refreshToken,
-    user: {
-      id: user.id,
-      email: user.email,
-      name: user.name,
-      role: user.role,
-      avatarUrl: user.avatarUrl,
-      brandId,
-      influencerId,
-    },
+    user: userPayload,
   };
 }
 
@@ -213,7 +255,46 @@ export async function refresh(rawToken: string) {
   });
   const newRefreshToken = await createRefreshToken(user.id);
 
-  return { accessToken, refreshToken: newRefreshToken };
+  const [userProfile]: any[] = user.role === 'brand_owner'
+    ? await db.select().from(brandProfiles).where(eq(brandProfiles.id, brandId!)).limit(1)
+    : user.role === 'influencer'
+      ? await db.select().from(influencerProfiles).where(eq(influencerProfiles.id, influencerId!)).limit(1)
+      : [null];
+
+  const userPayload = {
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    role: user.role,
+    avatarUrl: user.avatarUrl,
+    brandId,
+    influencerId,
+    ...(user.role === 'brand_owner' && userProfile ? {
+      brandName: userProfile.brandName,
+      brandType: userProfile.brandType,
+      brandLogoUrl: userProfile.brandLogoUrl,
+      industry: userProfile.industry,
+      website: userProfile.website,
+      city: userProfile.city,
+      primaryLanguage: userProfile.primaryLanguage,
+      otherLanguages: userProfile.otherLanguages,
+      bio: userProfile.description,
+    } : {}),
+    ...(user.role === 'influencer' && userProfile ? {
+      handle: userProfile.handle,
+      bio: userProfile.bio,
+      location: userProfile.location,
+      niches: userProfile.niches,
+      tier: userProfile.tier,
+      followerCount: userProfile.followerCount,
+    } : {}),
+  };
+
+  return {
+    accessToken,
+    refreshToken: newRefreshToken,
+    user: userPayload,
+  };
 }
 
 export async function logout(rawToken: string): Promise<void> {
@@ -234,7 +315,18 @@ export async function getMe(userId: string) {
       .where(eq(brandProfiles.userId, userId))
       .limit(1);
     if (brand) {
-      profile = { brandId: brand.id, brandName: brand.brandName, brandLogoUrl: brand.brandLogoUrl, industry: brand.industry, website: brand.website };
+      profile = {
+        brandId: brand.id,
+        brandName: brand.brandName,
+        brandLogoUrl: brand.brandLogoUrl,
+        industry: brand.industry,
+        website: brand.website,
+        city: brand.city,
+        brandType: brand.brandType,
+        primaryLanguage: brand.primaryLanguage,
+        otherLanguages: brand.otherLanguages,
+        bio: brand.description, // Map description to bio
+      };
     }
   } else if (user.role === 'influencer') {
     const [influencer] = await db
@@ -243,7 +335,15 @@ export async function getMe(userId: string) {
       .where(eq(influencerProfiles.userId, userId))
       .limit(1);
     if (influencer) {
-      profile = { influencerId: influencer.id, handle: influencer.handle, tier: influencer.tier, followerCount: influencer.followerCount };
+      profile = {
+        influencerId: influencer.id,
+        handle: influencer.handle,
+        tier: influencer.tier,
+        followerCount: influencer.followerCount,
+        bio: influencer.bio,
+        location: influencer.location,
+        niches: influencer.niches,
+      };
     }
   }
 
@@ -256,4 +356,69 @@ export async function getMe(userId: string) {
     isVerified: user.isVerified,
     ...profile,
   };
+}
+
+export async function updateMe(userId: string, dto: UpdateMeDTO) {
+  const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+  if (!user) throw new NotFoundError('User');
+
+  const updateData: Partial<typeof users.$inferInsert> = { updatedAt: new Date() };
+  if (dto.name !== undefined) updateData.name = dto.name;
+
+  const [updated] = await db
+    .update(users)
+    .set(updateData)
+    .where(eq(users.id, userId))
+    .returning();
+
+  return updated;
+}
+
+export async function softDeleteUser(userId: string) {
+  const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+  if (!user) throw new NotFoundError('User');
+
+  // Check for active collaborations
+  const activeStatuses = ['invited', 'applied', 'negotiating', 'accepted', 'payment_pending', 'paid', 'script_pending', 'script_review', 'work_pending', 'work_review'];
+
+  if (user.role === 'brand_owner') {
+    const [brand] = await db.select().from(brandProfiles).where(eq(brandProfiles.userId, userId)).limit(1);
+    if (brand) {
+      const activeCIs = await db
+        .select({ id: campaignInfluencers.id })
+        .from(campaignInfluencers)
+        .innerJoin(campaigns, eq(campaigns.id, campaignInfluencers.campaignId))
+        .where(
+          and(
+            eq(campaigns.brandId, brand.id),
+            sql`${campaignInfluencers.status} IN ${activeStatuses}`
+          )
+        )
+        .limit(1);
+
+      if (activeCIs.length > 0) {
+        throw new BadRequestError('Cannot delete account with active campaign collaborations. Please resolve or withdraw them first.');
+      }
+    }
+  } else if (user.role === 'influencer') {
+    const [influencer] = await db.select().from(influencerProfiles).where(eq(influencerProfiles.userId, userId)).limit(1);
+    if (influencer) {
+      const activeCIs = await db
+        .select({ id: campaignInfluencers.id })
+        .from(campaignInfluencers)
+        .where(
+          and(
+            eq(campaignInfluencers.influencerId, influencer.id),
+            sql`${campaignInfluencers.status} IN ${activeStatuses}`
+          )
+        )
+        .limit(1);
+
+      if (activeCIs.length > 0) {
+        throw new BadRequestError('Cannot delete account while part of active campaign collaborations. Please complete or withdraw from them first.');
+      }
+    }
+  }
+
+  await db.update(users).set({ isActive: false, updatedAt: new Date() }).where(eq(users.id, userId));
 }

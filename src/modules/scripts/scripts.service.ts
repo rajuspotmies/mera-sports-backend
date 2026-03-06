@@ -1,6 +1,7 @@
 import { eq, and } from 'drizzle-orm';
 import { db } from '@/db';
-import { scriptVersions, campaignInfluencers, campaigns } from '@/db/schema';
+import { scriptVersions, campaignInfluencers, campaigns, brandProfiles, influencerProfiles } from '@/db/schema';
+import { createNotification } from '../notifications/notifications.service';
 import { NotFoundError, ForbiddenError, BadRequestError } from '@/shared/errors';
 import type { JWTPayload } from '@/shared/types/api';
 
@@ -24,9 +25,15 @@ export async function submitScript(
 ) {
   if (!influencerUser.influencerId) throw new ForbiddenError('Influencer profile not found');
 
-  const [ci] = await db
-    .select()
+  const [ciData] = await db
+    .select({
+      ci: campaignInfluencers,
+      brandUserId: brandProfiles.userId,
+      campaignName: campaigns.name,
+    })
     .from(campaignInfluencers)
+    .innerJoin(campaigns, eq(campaigns.id, campaignInfluencers.campaignId))
+    .innerJoin(brandProfiles, eq(brandProfiles.id, campaigns.brandId))
     .where(
       and(
         eq(campaignInfluencers.campaignId, campaignId),
@@ -35,7 +42,9 @@ export async function submitScript(
     )
     .limit(1);
 
-  if (!ci) throw new NotFoundError('You are not part of this campaign');
+  if (!ciData) throw new NotFoundError('You are not part of this campaign');
+  const { ci, brandUserId, campaignName } = ciData;
+
   if (!['script_pending', 'accepted', 'paid'].includes(ci.status)) {
     throw new BadRequestError(`Cannot submit script when status is '${ci.status}'`);
   }
@@ -66,6 +75,17 @@ export async function submitScript(
     .set({ status: 'script_review', updatedAt: new Date() })
     .where(eq(campaignInfluencers.id, ci.id));
 
+  // ─── Notify the Brand ──────────────────────────────────────────────────
+  await createNotification({
+    userId: brandUserId,
+    type: 'system',
+    title: 'Script Submitted',
+    message: `A new script has been submitted for campaign "${campaignName}".`,
+    campaignId: campaignId,
+    campaignName: campaignName,
+    actionUrl: `/campaigns/${campaignId}/scripts`,
+  });
+
   return script;
 }
 
@@ -73,8 +93,20 @@ export async function approveScript(scriptId: string, brandUser: JWTPayload) {
   const [script] = await db.select().from(scriptVersions).where(eq(scriptVersions.id, scriptId)).limit(1);
   if (!script) throw new NotFoundError('Script');
 
-  const [ci] = await db.select().from(campaignInfluencers).where(eq(campaignInfluencers.id, script.campaignInfluencerId)).limit(1);
-  if (!ci) throw new NotFoundError('Campaign influencer');
+  const [ciData] = await db
+    .select({
+      ci: campaignInfluencers,
+      influencerUserId: influencerProfiles.userId,
+      campaignName: campaigns.name,
+    })
+    .from(campaignInfluencers)
+    .innerJoin(influencerProfiles, eq(influencerProfiles.id, campaignInfluencers.influencerId))
+    .innerJoin(campaigns, eq(campaigns.id, campaignInfluencers.campaignId))
+    .where(eq(campaignInfluencers.id, script.campaignInfluencerId))
+    .limit(1);
+
+  if (!ciData) throw new NotFoundError('Campaign influencer');
+  const { ci, influencerUserId, campaignName } = ciData;
 
   await assertBrandOwnsCampaign(ci.campaignId, brandUser);
 
@@ -90,6 +122,17 @@ export async function approveScript(scriptId: string, brandUser: JWTPayload) {
     .set({ status: 'work_pending', updatedAt: new Date() })
     .where(eq(campaignInfluencers.id, ci.id));
 
+  // ─── Notify the Influencer ───────────────────────────────────────────────
+  await createNotification({
+    userId: influencerUserId,
+    type: 'system',
+    title: 'Script Approved',
+    message: `Your script for "${campaignName}" has been approved. You can now start working on the content!`,
+    campaignId: ci.campaignId,
+    campaignName: campaignName,
+    actionUrl: `/campaigns/${ci.campaignId}`,
+  });
+
   return updated;
 }
 
@@ -97,8 +140,20 @@ export async function requestScriptRevision(scriptId: string, reviewNote: string
   const [script] = await db.select().from(scriptVersions).where(eq(scriptVersions.id, scriptId)).limit(1);
   if (!script) throw new NotFoundError('Script');
 
-  const [ci] = await db.select().from(campaignInfluencers).where(eq(campaignInfluencers.id, script.campaignInfluencerId)).limit(1);
-  if (!ci) throw new NotFoundError('Campaign influencer');
+  const [ciData] = await db
+    .select({
+      ci: campaignInfluencers,
+      influencerUserId: influencerProfiles.userId,
+      campaignName: campaigns.name,
+    })
+    .from(campaignInfluencers)
+    .innerJoin(influencerProfiles, eq(influencerProfiles.id, campaignInfluencers.influencerId))
+    .innerJoin(campaigns, eq(campaigns.id, campaignInfluencers.campaignId))
+    .where(eq(campaignInfluencers.id, script.campaignInfluencerId))
+    .limit(1);
+
+  if (!ciData) throw new NotFoundError('Campaign influencer');
+  const { ci, influencerUserId, campaignName } = ciData;
 
   await assertBrandOwnsCampaign(ci.campaignId, brandUser);
 
@@ -113,6 +168,17 @@ export async function requestScriptRevision(scriptId: string, reviewNote: string
     .update(campaignInfluencers)
     .set({ status: 'script_pending', updatedAt: new Date() })
     .where(eq(campaignInfluencers.id, ci.id));
+
+  // ─── Notify the Influencer ───────────────────────────────────────────────
+  await createNotification({
+    userId: influencerUserId,
+    type: 'system',
+    title: 'Script Revision Requested',
+    message: `The brand has requested a revision for your script for "${campaignName}".`,
+    campaignId: ci.campaignId,
+    campaignName: campaignName,
+    actionUrl: `/campaigns/${ci.campaignId}`,
+  });
 
   return updated;
 }

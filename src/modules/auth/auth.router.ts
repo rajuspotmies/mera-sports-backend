@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { validate } from '@/middleware/validate';
 import { authenticate } from '@/middleware/authenticate';
 import { authLimiter } from '@/middleware/rateLimiter';
-import { registerSchema, loginSchema, refreshSchema, logoutSchema } from './auth.schema';
+import { registerSchema, loginSchema, refreshSchema, logoutSchema, updateMeSchema } from './auth.schema';
 import * as ctrl from './auth.controller';
 import { asyncHandler } from '@/shared/utils/asyncHandler';
 
@@ -13,5 +13,7 @@ router.post('/login', authLimiter, validate({ body: loginSchema }), asyncHandler
 router.post('/refresh', validate({ body: refreshSchema }), asyncHandler(ctrl.refreshHandler));
 router.post('/logout', validate({ body: logoutSchema }), asyncHandler(ctrl.logoutHandler));
 router.get('/me', authenticate, asyncHandler(ctrl.getMeHandler));
+router.put('/me', authenticate, validate({ body: updateMeSchema }), asyncHandler(ctrl.updateMeHandler));
+router.delete('/me', authenticate, asyncHandler(ctrl.deleteMeHandler));
 
 export default router;

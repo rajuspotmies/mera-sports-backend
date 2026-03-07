@@ -67,7 +67,7 @@ export async function submitWork(
   // ─── Notify the Brand ──────────────────────────────────────────────────
   await createNotification({
     userId: brandUserId,
-    type: 'system',
+    type: 'submission',
     title: 'Work Submitted',
     message: `Final content has been submitted for campaign "${campaignName}".`,
     campaignId: campaignId,
@@ -113,7 +113,7 @@ export async function approveSubmission(subId: string, brandUser: JWTPayload) {
   // ─── Notify the Influencer ───────────────────────────────────────────────
   await createNotification({
     userId: influencerUserId,
-    type: 'system',
+    type: 'submission',
     title: 'Work Approved',
     message: `Your final content for "${campaignName}" has been approved! Campaign completed.`,
     campaignId: ci.campaignId,
@@ -160,7 +160,7 @@ export async function rejectSubmission(subId: string, reviewNote: string, brandU
   // ─── Notify the Influencer ───────────────────────────────────────────────
   await createNotification({
     userId: influencerUserId,
-    type: 'system',
+    type: 'submission',
     title: 'Work Rejected',
     message: `The brand has requested changes to your content for "${campaignName}".`,
     campaignId: ci.campaignId,

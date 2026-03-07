@@ -79,7 +79,7 @@ export async function counterOffer(
   const recipientUserId = party === 'brand' ? ci.influencerUserId : ci.brandUserId;
   await createNotification({
     userId: recipientUserId,
-    type: 'system',
+    type: 'negotiation',
     title: 'New Counter Offer',
     message: `You received a counter offer for the campaign "${ci.campaignName}".`,
     campaignId: ci.campaignId,
@@ -158,7 +158,7 @@ export async function acceptOffer(
   const recipientUserId = party === 'brand' ? ci.influencerUserId : ci.brandUserId;
   await createNotification({
     userId: recipientUserId,
-    type: 'system',
+    type: 'negotiation',
     title: 'Offer Accepted',
     message: `The offer for "${ci.campaignName}" has been accepted!`,
     campaignId: ci.campaignId,

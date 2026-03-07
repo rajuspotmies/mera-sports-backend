@@ -9,7 +9,7 @@ const cookieOptions: CookieOptions = {
   httpOnly: true,
   secure: env.NODE_ENV === 'production',
   sameSite: 'lax',
-  path: '/',
+  path: '/api/v1/auth/refresh',
   maxAge: (parseInt(env.REFRESH_TOKEN_EXPIRES_IN, 10) || 30) * 24 * 60 * 60 * 1000,
 };
 

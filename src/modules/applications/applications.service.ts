@@ -6,6 +6,7 @@ import {
   influencerProfiles,
   users,
   conversations,
+  brandProfiles,
 } from '@/db/schema';
 import {
   NotFoundError,
@@ -16,6 +17,8 @@ import {
 import { parsePagination, buildPaginationMeta, getOffset } from '@/shared/utils/pagination';
 import type { JWTPayload } from '@/shared/types/api';
 import type { ApplyToCampaignDTO, ListApplicationsQuery } from './applications.schema';
+
+import { createNotification } from '../notifications/notifications.service';
 
 // ─── List applications for a campaign (brand side) ───────────────────────────
 
@@ -82,20 +85,23 @@ export async function applyToCampaign(
 ) {
   if (!influencerUser.influencerId) throw new ForbiddenError('Influencer profile not found');
 
-  const [campaign] = await db
+  const [campaignData] = await db
     .select({
       id: campaigns.id,
+      name: campaigns.name,
       visibility: campaigns.visibility,
       status: campaigns.status,
       budgetTierPricing: campaigns.budgetTierPricing,
+      brandUserId: brandProfiles.userId,
     })
     .from(campaigns)
+    .innerJoin(brandProfiles, eq(campaigns.brandId, brandProfiles.id))
     .where(eq(campaigns.id, campaignId))
     .limit(1);
 
-  if (!campaign) throw new NotFoundError('Campaign');
-  if (campaign.visibility !== 'public') throw new ForbiddenError('This campaign is not open for applications');
-  if (campaign.status !== 'active') throw new BadRequestError('Campaign is not currently accepting applications');
+  if (!campaignData) throw new NotFoundError('Campaign');
+  if (campaignData.visibility !== 'public') throw new ForbiddenError('This campaign is not open for applications');
+  if (campaignData.status !== 'active') throw new BadRequestError('Campaign is not currently accepting applications');
 
   // Check for duplicate
   const [existing] = await db
@@ -123,7 +129,7 @@ export async function applyToCampaign(
     .where(eq(influencerProfiles.id, influencerUser.influencerId))
     .limit(1);
 
-  const tierPricing = campaign.budgetTierPricing as Array<{ tier: string; rate: number }>;
+  const tierPricing = campaignData.budgetTierPricing as Array<{ tier: string; rate: number }>;
   const tierEntry = tierPricing.find((t) => t.tier === influencer?.tier);
   const tierRate = tierEntry ? tierEntry.rate.toString() : null;
 
@@ -148,6 +154,17 @@ export async function applyToCampaign(
       updatedAt: new Date(),
     })
     .where(eq(campaigns.id, campaignId));
+
+  // ─── Notify the Brand ──────────────────────────────────────────────────
+  await createNotification({
+    userId: campaignData.brandUserId,
+    type: 'application',
+    title: 'New Campaign Application',
+    message: `A new influencer has applied to your campaign "${campaignData.name}".`,
+    campaignId: campaignId,
+    campaignName: campaignData.name,
+    actionUrl: `/campaigns/${campaignId}/applications`,
+  });
 
   return ci;
 }
@@ -183,10 +200,25 @@ export async function acceptInvite(
   await ensureConversation(campaignId, ci);
 
   // Increment creatorsAccepted
-  await db
+  const [campaign] = await db
     .update(campaigns)
     .set({ creatorsAccepted: sql`${campaigns.creatorsAccepted} + 1`, updatedAt: new Date() })
-    .where(eq(campaigns.id, campaignId));
+    .where(eq(campaigns.id, campaignId))
+    .returning();
+
+  // ─── Notify the Brand ──────────────────────────────────────────────────
+  const [brand] = await db.select({ userId: brandProfiles.userId }).from(brandProfiles).where(eq(brandProfiles.id, campaign.brandId)).limit(1);
+  if (brand) {
+    await createNotification({
+      userId: brand.userId,
+      type: 'application',
+      title: 'Invite Accepted',
+      message: `An influencer has accepted your invite to "${campaign.name}".`,
+      campaignId: campaignId,
+      campaignName: campaign.name,
+      actionUrl: `/campaigns/${campaignId}/applications`,
+    });
+  }
 
   return updated;
 }
@@ -220,13 +252,20 @@ export async function approveApplication(
 ) {
   await assertBrandOwnsCampaign(campaignId, brandUser);
 
-  const [ci] = await db
-    .select()
+  const [ciData] = await db
+    .select({
+      ci: campaignInfluencers,
+      influencerUserId: influencerProfiles.userId,
+      campaignName: campaigns.name,
+    })
     .from(campaignInfluencers)
+    .innerJoin(influencerProfiles, eq(influencerProfiles.id, campaignInfluencers.influencerId))
+    .innerJoin(campaigns, eq(campaigns.id, campaignInfluencers.campaignId))
     .where(and(eq(campaignInfluencers.id, appId), eq(campaignInfluencers.campaignId, campaignId)))
     .limit(1);
 
-  if (!ci) throw new NotFoundError('Application');
+  if (!ciData) throw new NotFoundError('Application');
+  const { ci, influencerUserId, campaignName } = ciData;
 
   if (!['applied', 'negotiating'].includes(ci.status)) {
     throw new BadRequestError(`Cannot approve application with status '${ci.status}'`);
@@ -253,6 +292,17 @@ export async function approveApplication(
     .set({ creatorsAccepted: sql`${campaigns.creatorsAccepted} + 1`, updatedAt: new Date() })
     .where(eq(campaigns.id, campaignId));
 
+  // ─── Notify the Influencer ───────────────────────────────────────────────
+  await createNotification({
+    userId: influencerUserId,
+    type: 'application',
+    title: 'Application Approved!',
+    message: `Your application to "${campaignName}" has been approved. You can now start chatting with the brand.`,
+    campaignId: campaignId,
+    campaignName: campaignName,
+    actionUrl: `/campaigns/${campaignId}`,
+  });
+
   return updated;
 }
 
@@ -265,13 +315,20 @@ export async function rejectApplication(
 ) {
   await assertBrandOwnsCampaign(campaignId, brandUser);
 
-  const [ci] = await db
-    .select({ id: campaignInfluencers.id, status: campaignInfluencers.status })
+  const [ciData] = await db
+    .select({
+      ci: campaignInfluencers,
+      influencerUserId: influencerProfiles.userId,
+      campaignName: campaigns.name,
+    })
     .from(campaignInfluencers)
+    .innerJoin(influencerProfiles, eq(influencerProfiles.id, campaignInfluencers.influencerId))
+    .innerJoin(campaigns, eq(campaigns.id, campaignInfluencers.campaignId))
     .where(and(eq(campaignInfluencers.id, appId), eq(campaignInfluencers.campaignId, campaignId)))
     .limit(1);
 
-  if (!ci) throw new NotFoundError('Application');
+  if (!ciData) throw new NotFoundError('Application');
+  const { ci, influencerUserId, campaignName } = ciData;
 
   if (!['applied', 'invited', 'negotiating'].includes(ci.status)) {
     throw new BadRequestError(`Cannot reject application with status '${ci.status}'`);
@@ -282,6 +339,17 @@ export async function rejectApplication(
     .set({ status: 'rejected', updatedAt: new Date() })
     .where(eq(campaignInfluencers.id, appId))
     .returning();
+
+  // ─── Notify the Influencer ───────────────────────────────────────────────
+  await createNotification({
+    userId: influencerUserId,
+    type: 'application',
+    title: 'Application Update',
+    message: `Your application to "${campaignName}" was not accepted this time.`,
+    campaignId: campaignId,
+    campaignName: campaignName,
+    actionUrl: `/campaigns/${campaignId}`,
+  });
 
   return updated;
 }

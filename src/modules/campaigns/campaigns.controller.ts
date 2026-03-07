@@ -2,6 +2,7 @@ import type { Request, Response } from 'express';
 import * as campaignsService from './campaigns.service';
 import { sendSuccess, sendCreated } from '@/shared/utils/response';
 import { BadRequestError } from '@/shared/errors';
+import { getPublicUrl } from '@/config/s3';
 
 export async function listCampaignsHandler(req: Request, res: Response): Promise<void> {
   // brand_owner sees their own; influencer sees discover endpoint
@@ -51,7 +52,8 @@ export async function closeCampaignHandler(req: Request, res: Response): Promise
 
 export async function uploadThumbnailHandler(req: Request, res: Response): Promise<void> {
   if (!req.file) throw new BadRequestError('No file uploaded');
-  const fileUrl = (req.file as any).location || (req.file as any).key; // Fallbacks for multer-s3
+  const key = (req.file as any).key; // Ensure we only get the S3 key, ignoring the public .location
+  const fileUrl = getPublicUrl(key);
   const result = await campaignsService.updateCampaignThumbnail(req.params.id, req.user, fileUrl);
   sendSuccess(res, result);
 }

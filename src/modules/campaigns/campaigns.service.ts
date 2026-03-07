@@ -1,9 +1,11 @@
-import { eq, and, desc, asc, sql } from 'drizzle-orm';
+import { eq, and, desc, asc, sql, notInArray } from 'drizzle-orm';
 import { db } from '@/db';
-import { campaigns, brandProfiles, users } from '@/db/schema';
+import { campaigns, brandProfiles, users, campaignInfluencers, influencerProfiles } from '@/db/schema';
+import { createNotification } from '../notifications/notifications.service';
 import { NotFoundError, ForbiddenError, BadRequestError } from '@/shared/errors';
 import { parsePagination, buildPaginationMeta, getOffset } from '@/shared/utils/pagination';
 import type { JWTPayload } from '@/shared/types/api';
+import { emitToCampaign, emitToUser } from '@/socket';
 import type { Campaign } from '@/db/schema';
 import type { CreateCampaignDTO, UpdateCampaignDTO, ListCampaignsQuery } from './campaigns.schema';
 
@@ -207,14 +209,57 @@ export async function updateCampaign(
 export async function deleteCampaign(id: string, brandUser: JWTPayload): Promise<void> {
   const campaign = await assertOwnership(id, brandUser);
 
-  if (campaign.status === 'active') {
-    throw new BadRequestError('Close or withdraw the campaign before deleting');
-  }
-
+  // 1. Update campaign status
   await db
     .update(campaigns)
     .set({ status: 'withdrawn', updatedAt: new Date() })
     .where(eq(campaigns.id, id));
+
+  // 2. Find all active collaborations that need to be withdrawn
+  const activeStatuses = ['invited', 'applied', 'negotiating', 'accepted', 'payment_pending', 'paid', 'script_pending', 'script_review', 'work_pending', 'work_review'];
+
+  const activeCIs = await db
+    .select({
+      ciId: campaignInfluencers.id,
+      influencerUserId: influencerProfiles.userId,
+    })
+    .from(campaignInfluencers)
+    .innerJoin(influencerProfiles, eq(influencerProfiles.id, campaignInfluencers.influencerId))
+    .where(
+      and(
+        eq(campaignInfluencers.campaignId, id),
+        sql`${campaignInfluencers.status} IN ${activeStatuses}`
+      )
+    );
+
+  if (activeCIs.length > 0) {
+    // 3. Update all active CIs to withdrawn
+    await db
+      .update(campaignInfluencers)
+      .set({ status: 'withdrawn', updatedAt: new Date() })
+      .where(
+        and(
+          eq(campaignInfluencers.campaignId, id),
+          sql`${campaignInfluencers.status} IN ${activeStatuses}`
+        )
+      );
+
+    // 4. Notify each influencer
+    for (const ci of activeCIs) {
+      await createNotification({
+        userId: ci.influencerUserId,
+        type: 'system',
+        title: 'Campaign Withdrawn',
+        message: `The campaign "${campaign.name}" has been withdrawn by the brand.`,
+        campaignId: id,
+        campaignName: campaign.name,
+        actionUrl: `/campaigns/${id}`,
+      });
+    }
+  }
+
+  // ─── Real-time emission ───────────────────────────────────────────────────
+  emitToCampaign(id, 'CAMPAIGN_UPDATED', { id, status: 'withdrawn' });
 }
 
 // ─── Launch ───────────────────────────────────────────────────────────────────
@@ -231,6 +276,9 @@ export async function launchCampaign(id: string, brandUser: JWTPayload): Promise
     .set({ status: 'active', launchedAt: new Date(), updatedAt: new Date() })
     .where(eq(campaigns.id, id))
     .returning();
+
+  // Real-time update for all viewers
+  emitToCampaign(id, 'CAMPAIGN_UPDATED', updated);
 
   return updated;
 }
@@ -249,6 +297,9 @@ export async function closeCampaign(id: string, brandUser: JWTPayload): Promise<
     .set({ status: 'closed', closedAt: new Date(), updatedAt: new Date() })
     .where(eq(campaigns.id, id))
     .returning();
+
+  // Real-time update for all viewers
+  emitToCampaign(id, 'CAMPAIGN_UPDATED', updated);
 
   return updated;
 }

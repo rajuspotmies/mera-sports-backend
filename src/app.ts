@@ -1,6 +1,7 @@
 import express from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
+import cookieParser from 'cookie-parser';
 import path from 'path';
 import { env } from './config/env';
 import { errorHandler } from './middleware/errorHandler';
@@ -15,6 +16,7 @@ import notificationsRouter from './modules/notifications/notifications.router';
 import messagesRouter from './modules/messages/messages.router';
 import analyticsRouter from './modules/analytics/analytics.router';
 import aiRouter from './modules/ai/ai.router';
+import uploadsRouter from './modules/uploads/uploads.router';
 
 export function createApp() {
   const app = express();
@@ -43,8 +45,14 @@ export function createApp() {
   );
 
   // ─── Body parsing ─────────────────────────────────────────────────────────
-  app.use(express.json({ limit: '10mb' }));
+  app.use(express.json({
+    limit: '10mb',
+    verify: (req: any, _res, buf) => {
+      req.rawBody = buf;
+    }
+  }));
   app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+  app.use(cookieParser());
 
   // ─── Static file serving (uploaded files) ─────────────────────────────────
   // No longer needed: files are served directly from S3 / Railway Buckets
@@ -65,6 +73,7 @@ export function createApp() {
   app.use('/api/v1/messages', messagesRouter);
   app.use('/api/v1/analytics', analyticsRouter);
   app.use('/api/v1/ai', aiRouter);
+  app.use('/api/v1/uploads', uploadsRouter);
 
   // ─── 404 handler ──────────────────────────────────────────────────────────
   app.use((_req, res) => {

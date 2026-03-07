@@ -1,6 +1,7 @@
 import { eq, and } from 'drizzle-orm';
 import { db } from '@/db';
-import { workSubmissions, campaignInfluencers, campaigns } from '@/db/schema';
+import { workSubmissions, campaignInfluencers, campaigns, brandProfiles, influencerProfiles } from '@/db/schema';
+import { createNotification } from '../notifications/notifications.service';
 import { NotFoundError, ForbiddenError, BadRequestError } from '@/shared/errors';
 import type { JWTPayload } from '@/shared/types/api';
 
@@ -23,9 +24,15 @@ export async function submitWork(
 ) {
   if (!influencerUser.influencerId) throw new ForbiddenError('Influencer profile not found');
 
-  const [ci] = await db
-    .select()
+  const [ciData] = await db
+    .select({
+      ci: campaignInfluencers,
+      brandUserId: brandProfiles.userId,
+      campaignName: campaigns.name,
+    })
     .from(campaignInfluencers)
+    .innerJoin(campaigns, eq(campaigns.id, campaignInfluencers.campaignId))
+    .innerJoin(brandProfiles, eq(brandProfiles.id, campaigns.brandId))
     .where(
       and(
         eq(campaignInfluencers.campaignId, campaignId),
@@ -34,7 +41,9 @@ export async function submitWork(
     )
     .limit(1);
 
-  if (!ci) throw new NotFoundError('You are not part of this campaign');
+  if (!ciData) throw new NotFoundError('You are not part of this campaign');
+  const { ci, brandUserId, campaignName } = ciData;
+
   if (ci.status !== 'work_pending') {
     throw new BadRequestError(`Cannot submit work when status is '${ci.status}'`);
   }
@@ -55,6 +64,17 @@ export async function submitWork(
     .set({ status: 'work_review', updatedAt: new Date() })
     .where(eq(campaignInfluencers.id, ci.id));
 
+  // ─── Notify the Brand ──────────────────────────────────────────────────
+  await createNotification({
+    userId: brandUserId,
+    type: 'submission',
+    title: 'Work Submitted',
+    message: `Final content has been submitted for campaign "${campaignName}".`,
+    campaignId: campaignId,
+    campaignName: campaignName,
+    actionUrl: `/campaigns/${campaignId}/submissions`,
+  });
+
   return submission;
 }
 
@@ -62,8 +82,20 @@ export async function approveSubmission(subId: string, brandUser: JWTPayload) {
   const [sub] = await db.select().from(workSubmissions).where(eq(workSubmissions.id, subId)).limit(1);
   if (!sub) throw new NotFoundError('Submission');
 
-  const [ci] = await db.select().from(campaignInfluencers).where(eq(campaignInfluencers.id, sub.campaignInfluencerId)).limit(1);
-  if (!ci) throw new NotFoundError('Campaign influencer');
+  const [ciData] = await db
+    .select({
+      ci: campaignInfluencers,
+      influencerUserId: influencerProfiles.userId,
+      campaignName: campaigns.name,
+    })
+    .from(campaignInfluencers)
+    .innerJoin(influencerProfiles, eq(influencerProfiles.id, campaignInfluencers.influencerId))
+    .innerJoin(campaigns, eq(campaigns.id, campaignInfluencers.campaignId))
+    .where(eq(campaignInfluencers.id, sub.campaignInfluencerId))
+    .limit(1);
+
+  if (!ciData) throw new NotFoundError('Campaign influencer');
+  const { ci, influencerUserId, campaignName } = ciData;
 
   await assertBrandOwnsCampaign(ci.campaignId, brandUser);
 
@@ -78,6 +110,17 @@ export async function approveSubmission(subId: string, brandUser: JWTPayload) {
     .set({ status: 'completed', completedAt: new Date(), updatedAt: new Date() })
     .where(eq(campaignInfluencers.id, ci.id));
 
+  // ─── Notify the Influencer ───────────────────────────────────────────────
+  await createNotification({
+    userId: influencerUserId,
+    type: 'submission',
+    title: 'Work Approved',
+    message: `Your final content for "${campaignName}" has been approved! Campaign completed.`,
+    campaignId: ci.campaignId,
+    campaignName: campaignName,
+    actionUrl: `/campaigns/${ci.campaignId}`,
+  });
+
   return updated;
 }
 
@@ -85,8 +128,20 @@ export async function rejectSubmission(subId: string, reviewNote: string, brandU
   const [sub] = await db.select().from(workSubmissions).where(eq(workSubmissions.id, subId)).limit(1);
   if (!sub) throw new NotFoundError('Submission');
 
-  const [ci] = await db.select().from(campaignInfluencers).where(eq(campaignInfluencers.id, sub.campaignInfluencerId)).limit(1);
-  if (!ci) throw new NotFoundError('Campaign influencer');
+  const [ciData] = await db
+    .select({
+      ci: campaignInfluencers,
+      influencerUserId: influencerProfiles.userId,
+      campaignName: campaigns.name,
+    })
+    .from(campaignInfluencers)
+    .innerJoin(influencerProfiles, eq(influencerProfiles.id, campaignInfluencers.influencerId))
+    .innerJoin(campaigns, eq(campaigns.id, campaignInfluencers.campaignId))
+    .where(eq(campaignInfluencers.id, sub.campaignInfluencerId))
+    .limit(1);
+
+  if (!ciData) throw new NotFoundError('Campaign influencer');
+  const { ci, influencerUserId, campaignName } = ciData;
 
   await assertBrandOwnsCampaign(ci.campaignId, brandUser);
 
@@ -101,6 +156,17 @@ export async function rejectSubmission(subId: string, reviewNote: string, brandU
     .update(campaignInfluencers)
     .set({ status: 'work_pending', updatedAt: new Date() })
     .where(eq(campaignInfluencers.id, ci.id));
+
+  // ─── Notify the Influencer ───────────────────────────────────────────────
+  await createNotification({
+    userId: influencerUserId,
+    type: 'submission',
+    title: 'Work Rejected',
+    message: `The brand has requested changes to your content for "${campaignName}".`,
+    campaignId: ci.campaignId,
+    campaignName: campaignName,
+    actionUrl: `/campaigns/${ci.campaignId}`,
+  });
 
   return updated;
 }

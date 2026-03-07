@@ -3,17 +3,25 @@ import { db } from '@/db';
 import { notifications } from '@/db/schema';
 import type { NewNotification } from '@/db/schema';
 import { parsePagination, buildPaginationMeta, getOffset } from '@/shared/utils/pagination';
+import { emitToUser } from '@/socket';
+import { notificationQueue, emailQueue } from '@/jobs/queue';
 
 // ─── Create & emit ────────────────────────────────────────────────────────────
 
 export async function createNotification(data: Omit<NewNotification, 'id' | 'createdAt'>) {
   const [notification] = await db.insert(notifications).values(data).returning();
 
-  // TODO: emit via Socket.io — inject `io` instance when wiring up
-  // io.to(`user:${data.userId}`).emit('NOTIFICATION', notification);
+  // Real-time emission to the target user
+  emitToUser(data.userId, 'NOTIFICATION', notification);
 
-  // TODO: queue email via Bull
-  // await notificationQueue.add('send-email', { ... });
+  // Queue background tasks
+  await notificationQueue.add('process-notification', notification);
+  await emailQueue.add('send-email', {
+    userId: data.userId,
+    type: data.type,
+    title: data.title,
+    message: data.message,
+  });
 
   return notification;
 }

@@ -22,10 +22,10 @@ router.put(
 );
 
 router.post(
-  '/profile/logo',
+  '/profile/avatar',
   uploadLimiter,
   setUploadFolder('logos'),
-  upload.single('file'),
+  upload.single('avatar'),
   asyncHandler(ctrl.uploadBrandLogoHandler)
 );
 

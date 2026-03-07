@@ -43,6 +43,7 @@ declare global {
       user: JWTPayload;
       campaign?: import('@/db/schema').Campaign;
       uploadFolder?: string;
+      rawBody?: Buffer;
     }
   }
 }

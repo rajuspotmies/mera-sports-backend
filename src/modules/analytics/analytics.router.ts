@@ -6,7 +6,7 @@ import * as ctrl from './analytics.controller';
 
 const router = Router();
 
-router.use(authenticate, authorize('brand_owner', 'admin'));
+router.use(authenticate, authorize('brand_owner', 'influencer', 'admin'));
 
 router.get('/overview', asyncHandler(ctrl.overviewHandler));
 router.get('/campaigns/:campaignId', asyncHandler(ctrl.campaignAnalyticsHandler));

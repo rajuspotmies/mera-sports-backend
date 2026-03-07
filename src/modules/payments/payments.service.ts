@@ -1,9 +1,10 @@
 import Razorpay from 'razorpay';
 import { env } from '@/config/env';
 import { db } from '@/db';
-import { campaignInfluencers, payments } from '@/db/schema';
+import { campaignInfluencers, payments, influencerProfiles, campaigns, brandProfiles } from '@/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { AppError } from '@/shared/errors';
+import { createNotification } from '../notifications/notifications.service';
 
 // Lazy init so it doesn't crash if keys are missing
 let razorpay: Razorpay | null = null;
@@ -77,6 +78,23 @@ export async function getPaymentStatus(campaignId: string) {
 }
 
 export async function handlePaymentSuccess(campaignInfluencerId: string, type: 'first' | 'final') {
+    const [ciData] = await db
+        .select({
+            ci: campaignInfluencers,
+            influencerUserId: influencerProfiles.userId,
+            brandUserId: brandProfiles.userId,
+            campaignName: campaigns.name,
+        })
+        .from(campaignInfluencers)
+        .innerJoin(influencerProfiles, eq(influencerProfiles.id, campaignInfluencers.influencerId))
+        .innerJoin(campaigns, eq(campaigns.id, campaignInfluencers.campaignId))
+        .innerJoin(brandProfiles, eq(brandProfiles.id, campaigns.brandId))
+        .where(eq(campaignInfluencers.id, campaignInfluencerId))
+        .limit(1);
+
+    if (!ciData) return;
+    const { ci, influencerUserId, brandUserId, campaignName } = ciData;
+
     if (type === 'first') {
         await db.update(payments)
             .set({ status: 'first_paid', firstPaidAt: new Date() })
@@ -85,6 +103,28 @@ export async function handlePaymentSuccess(campaignInfluencerId: string, type: '
         await db.update(campaignInfluencers)
             .set({ status: 'paid', paidAt: new Date() })
             .where(eq(campaignInfluencers.id, campaignInfluencerId));
+
+        // Notify Influencer
+        await createNotification({
+            userId: influencerUserId,
+            type: 'system',
+            title: 'Payment Received',
+            message: `The first payment for "${campaignName}" has been received. You can now start scripting!`,
+            campaignId: ci.campaignId,
+            campaignName: campaignName,
+            actionUrl: `/campaigns/${ci.campaignId}`,
+        });
+
+        // Notify Brand
+        await createNotification({
+            userId: brandUserId,
+            type: 'system',
+            title: 'Payment Successful',
+            message: `Your first payment for campaign "${campaignName}" was processed successfully.`,
+            campaignId: ci.campaignId,
+            campaignName: campaignName,
+            actionUrl: `/campaigns/${ci.campaignId}`,
+        });
     } else {
         await db.update(payments)
             .set({ status: 'completed', finalPaidAt: new Date() })
@@ -93,5 +133,27 @@ export async function handlePaymentSuccess(campaignInfluencerId: string, type: '
         await db.update(campaignInfluencers)
             .set({ status: 'completed', completedAt: new Date() })
             .where(eq(campaignInfluencers.id, campaignInfluencerId));
+
+        // Notify Influencer
+        await createNotification({
+            userId: influencerUserId,
+            type: 'system',
+            title: 'Final Payment Received',
+            message: `The final payment for "${campaignName}" has been received. Great job!`,
+            campaignId: ci.campaignId,
+            campaignName: campaignName,
+            actionUrl: `/campaigns/${ci.campaignId}`,
+        });
+
+        // Notify Brand
+        await createNotification({
+            userId: brandUserId,
+            type: 'system',
+            title: 'Final Payment Successful',
+            message: `The final payment for campaign "${campaignName}" was processed successfully. The collaboration is now complete.`,
+            campaignId: ci.campaignId,
+            campaignName: campaignName,
+            actionUrl: `/campaigns/${ci.campaignId}`,
+        });
     }
 }

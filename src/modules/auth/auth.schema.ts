@@ -18,14 +18,19 @@ export const loginSchema = z.object({
 });
 
 export const refreshSchema = z.object({
-  refreshToken: z.string().min(1),
+  refreshToken: z.string().optional(),
 });
 
 export const logoutSchema = z.object({
-  refreshToken: z.string().min(1),
+  refreshToken: z.string().optional(),
+});
+
+export const updateMeSchema = z.object({
+  name: z.string().min(2).max(255).optional(),
 });
 
 export type RegisterDTO = z.infer<typeof registerSchema>;
 export type LoginDTO = z.infer<typeof loginSchema>;
 export type RefreshDTO = z.infer<typeof refreshSchema>;
 export type LogoutDTO = z.infer<typeof logoutSchema>;
+export type UpdateMeDTO = z.infer<typeof updateMeSchema>;

@@ -1,9 +1,12 @@
 import { eq, and, asc, sql, desc } from 'drizzle-orm';
 import { db } from '@/db';
-import { messages, conversations, users, campaignInfluencers } from '@/db/schema';
+import { messages, conversations, users, campaignInfluencers, brandProfiles, influencerProfiles, campaigns } from '@/db/schema';
 import { NotFoundError, ForbiddenError } from '@/shared/errors';
 import { parsePagination, buildPaginationMeta, getOffset } from '@/shared/utils/pagination';
 import type { JWTPayload } from '@/shared/types/api';
+import { emitToUser } from '@/socket';
+
+import { createNotification } from '../notifications/notifications.service';
 
 export async function listConversations(user: JWTPayload) {
   let conditions;
@@ -72,14 +75,28 @@ export async function sendMessage(
   user: JWTPayload,
   content: string
 ) {
-  const [conv] = await db
-    .select()
+  const convWithProfiles = await db
+    .select({
+      id: conversations.id,
+      campaignId: conversations.campaignId,
+      brandId: conversations.brandId,
+      influencerId: conversations.influencerId,
+      brandUserId: brandProfiles.userId,
+      influencerUserId: influencerProfiles.userId,
+      campaignName: campaigns.name,
+    })
     .from(conversations)
+    .innerJoin(brandProfiles, eq(conversations.brandId, brandProfiles.id))
+    .innerJoin(influencerProfiles, eq(conversations.influencerId, influencerProfiles.id))
+    .innerJoin(campaigns, eq(conversations.campaignId, campaigns.id))
     .where(eq(conversations.id, conversationId))
     .limit(1);
 
+  const conv = convWithProfiles[0];
   if (!conv) throw new NotFoundError('Conversation');
-  assertConversationAccess(conv, user);
+  assertConversationAccess(conv as any, user);
+
+  const [sender] = await db.select({ name: users.name }).from(users).where(eq(users.id, user.sub)).limit(1);
 
   const senderRole = user.role === 'brand_owner' || user.role === 'admin' ? 'brand' : 'influencer';
 
@@ -95,6 +112,8 @@ export async function sendMessage(
 
   // Update conversation snippet + unread for the OTHER party
   const unreadField = senderRole === 'brand' ? 'influencer_unread' : 'brand_unread';
+  const recipientUserId = senderRole === 'brand' ? conv.influencerUserId : conv.brandUserId;
+
   await db
     .update(conversations)
     .set({
@@ -103,6 +122,24 @@ export async function sendMessage(
       [unreadField]: sql`${conversations[unreadField as keyof typeof conversations]} + 1`,
     })
     .where(eq(conversations.id, conversationId));
+
+  // ─── Real-time emission ───────────────────────────────────────────────────
+  // 1. Emit to the sender (to confirm across their own tabs)
+  emitToUser(user.sub, 'NEW_MESSAGE', message);
+
+  // 2. Emit to the recipient
+  emitToUser(recipientUserId, 'NEW_MESSAGE', message);
+
+  // ─── Trigger Notification ─────────────────────────────────────────────────
+  await createNotification({
+    userId: recipientUserId,
+    type: 'chat',
+    title: `New message from ${sender?.name || 'Someone'}`,
+    message: content.length > 100 ? `${content.slice(0, 97)}...` : content,
+    campaignId: conv.campaignId,
+    campaignName: conv.campaignName,
+    actionUrl: `/messages?id=${conversationId}`,
+  });
 
   return message;
 }

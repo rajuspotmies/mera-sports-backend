@@ -48,6 +48,20 @@ export function initSocketServer(httpServer: HttpServer): SocketIOServer {
       socket.leave(`campaign:${campaignId}`);
     });
 
+    socket.on('TYPING_START', (data: { conversationId: string; recipientUserId: string }) => {
+      emitToUser(data.recipientUserId, 'TYPING_START', {
+        conversationId: data.conversationId,
+        userId: user.sub,
+      });
+    });
+
+    socket.on('TYPING_STOP', (data: { conversationId: string; recipientUserId: string }) => {
+      emitToUser(data.recipientUserId, 'TYPING_STOP', {
+        conversationId: data.conversationId,
+        userId: user.sub,
+      });
+    });
+
     socket.on('SEND_MESSAGE', async (_data: { conversationId: string; content: string }) => {
       // Message sending is handled via REST — WS only emits the result
       // The REST handler should call emitToConversation after saving

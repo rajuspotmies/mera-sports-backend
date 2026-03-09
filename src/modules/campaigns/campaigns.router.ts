@@ -86,10 +86,11 @@ router.post(
   authenticate,
   authorize('brand_owner', 'admin'),
   uploadLimiter,
-  setUploadFolder('submissions'),
+  setUploadFolder('campaigns'),
   upload.single('file'),
   asyncHandler(ctrl.uploadThumbnailHandler)
 );
+
 
 // ─── Nested sub-routes ────────────────────────────────────────────────────────
 // Mount with :campaignId param (re-parameterize from :id to :campaignId for sub-routers)

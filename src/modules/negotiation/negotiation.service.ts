@@ -1,6 +1,7 @@
 import { eq, and, asc, sql } from 'drizzle-orm';
 import { db } from '@/db';
-import { negotiations, campaignInfluencers, campaigns, conversations } from '@/db/schema';
+import { negotiations, campaignInfluencers, campaigns, conversations, brandProfiles, influencerProfiles } from '@/db/schema';
+import { createNotification } from '../notifications/notifications.service';
 import { NotFoundError, ForbiddenError, BadRequestError } from '@/shared/errors';
 import type { JWTPayload } from '@/shared/types/api';
 import type { CounterOfferDTO, AcceptOfferDTO } from './negotiation.schema';
@@ -74,6 +75,18 @@ export async function counterOffer(
     })
     .where(eq(campaignInfluencers.id, ci.id));
 
+  // ─── Notify the other party ────────────────────────────────────────────────
+  const recipientUserId = party === 'brand' ? ci.influencerUserId : ci.brandUserId;
+  await createNotification({
+    userId: recipientUserId,
+    type: 'negotiation',
+    title: 'New Counter Offer',
+    message: `You received a counter offer for the campaign "${ci.campaignName}".`,
+    campaignId: ci.campaignId,
+    campaignName: ci.campaignName,
+    actionUrl: `/negotiation/${ci.campaignId}/${ci.influencerId}`,
+  });
+
   return entry;
 }
 
@@ -141,6 +154,18 @@ export async function acceptOffer(
       .where(eq(campaigns.id, campaignId));
   }
 
+  // ─── Notify the other party ────────────────────────────────────────────────
+  const recipientUserId = party === 'brand' ? ci.influencerUserId : ci.brandUserId;
+  await createNotification({
+    userId: recipientUserId,
+    type: 'negotiation',
+    title: 'Offer Accepted',
+    message: `The offer for "${ci.campaignName}" has been accepted!`,
+    campaignId: ci.campaignId,
+    campaignName: ci.campaignName,
+    actionUrl: `/negotiation/${ci.campaignId}/${ci.influencerId}`,
+  });
+
   return updated;
 }
 
@@ -152,8 +177,23 @@ async function getCIAndVerifyAccess(
   requester: JWTPayload
 ) {
   const [ci] = await db
-    .select()
+    .select({
+      id: campaignInfluencers.id,
+      campaignId: campaignInfluencers.campaignId,
+      influencerId: campaignInfluencers.influencerId,
+      status: campaignInfluencers.status,
+      tierRate: campaignInfluencers.tierRate,
+      agreedBudget: campaignInfluencers.agreedBudget,
+      acceptedAt: campaignInfluencers.acceptedAt,
+      influencerUserId: influencerProfiles.userId,
+      brandUserId: brandProfiles.userId,
+      campaignName: campaigns.name,
+      campaignBrandId: campaigns.brandId, // Added to verify brand access
+    })
     .from(campaignInfluencers)
+    .innerJoin(influencerProfiles, eq(influencerProfiles.id, campaignInfluencers.influencerId))
+    .innerJoin(campaigns, eq(campaigns.id, campaignInfluencers.campaignId))
+    .innerJoin(brandProfiles, eq(brandProfiles.id, campaigns.brandId))
     .where(
       and(
         eq(campaignInfluencers.campaignId, campaignId),
@@ -169,13 +209,8 @@ async function getCIAndVerifyAccess(
   // - influencer: must be the linked influencer
   // - admin: full access
   if (requester.role === 'brand_owner') {
-    const [campaign] = await db
-      .select({ brandId: campaigns.brandId })
-      .from(campaigns)
-      .where(eq(campaigns.id, campaignId))
-      .limit(1);
 
-    if (!campaign || campaign.brandId !== requester.brandId) {
+    if (ci.campaignBrandId !== requester.brandId) {
       throw new ForbiddenError('You do not own this campaign');
     }
   } else if (requester.role === 'influencer') {

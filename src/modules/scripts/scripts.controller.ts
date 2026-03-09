@@ -10,11 +10,12 @@ export async function listScriptsHandler(req: Request, res: Response): Promise<v
 
 export async function submitScriptHandler(req: Request, res: Response): Promise<void> {
   if (!req.file) throw new BadRequestError('No file uploaded');
-  const fileUrl = (req.file as any).location || (req.file as any).key; // Fallbacks for multer-s3
+  const key = (req.file as any).key; // Ensure we only get the S3 key
+  const proxyUrl = `/api/v1/uploads/${key}`; // Construct the proxy path locally
   const result = await scriptsService.submitScript(
     req.params.campaignId,
     req.user,
-    fileUrl,
+    proxyUrl,
     req.file.originalname
   );
   sendCreated(res, result);

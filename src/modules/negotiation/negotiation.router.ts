@@ -11,14 +11,14 @@ const router = Router({ mergeParams: true });
 // Both brand and influencer can view the negotiation history
 router.get(
   '/:influencerId',
-  authenticate,
+  authenticate(),
   asyncHandler(ctrl.getNegotiationHistoryHandler)
 );
 
 // Either party makes a counter offer
 router.post(
   '/:influencerId/counter',
-  authenticate,
+  authenticate(),
   validate({ body: counterOfferSchema }),
   asyncHandler(ctrl.counterOfferHandler)
 );
@@ -26,7 +26,7 @@ router.post(
 // Either party accepts the current offer
 router.post(
   '/:influencerId/accept',
-  authenticate,
+  authenticate(),
   validate({ body: acceptOfferSchema }),
   asyncHandler(ctrl.acceptOfferHandler)
 );

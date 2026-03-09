@@ -8,7 +8,7 @@ import { errorHandler } from './middleware/errorHandler';
 import { apiLimiter } from './middleware/rateLimiter';
 
 // Routers
-import authRouter from './modules/auth/auth.router';
+import adminRouter from './modules/admin/admin.router';
 import brandRouter from './modules/brand/brand.router';
 import influencersRouter from './modules/influencers/influencers.router';
 import campaignsRouter from './modules/campaigns/campaigns.router';
@@ -65,7 +65,7 @@ export function createApp() {
   // ─── API routes ───────────────────────────────────────────────────────────
   app.use('/api/v1', apiLimiter);
 
-  app.use('/api/v1/auth', authRouter);
+  app.use('/api/v1/admin', adminRouter);
   app.use('/api/v1/brand', brandRouter);
   app.use('/api/v1/influencers', influencersRouter);
   app.use('/api/v1/campaigns', campaignsRouter);

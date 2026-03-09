@@ -5,7 +5,7 @@ import * as ctrl from './notifications.controller';
 
 const router = Router();
 
-router.use(authenticate);
+router.use(authenticate());
 
 router.get('/', asyncHandler(ctrl.listNotificationsHandler));
 router.post('/:id/read', asyncHandler(ctrl.markReadHandler));

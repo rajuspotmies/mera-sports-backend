@@ -5,7 +5,7 @@ import * as ctrl from './messages.controller';
 
 const router = Router();
 
-router.use(authenticate);
+router.use(authenticate());
 
 router.get('/', asyncHandler(ctrl.listConversationsHandler));
 router.get('/:id', asyncHandler(ctrl.getConversationHandler));

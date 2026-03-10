@@ -12,7 +12,7 @@ const router = Router({ mergeParams: true });
 // Brand: list all applications for their campaign
 router.get(
   '/',
-  authenticate,
+  authenticate(),
   authorize('brand_owner', 'admin'),
   validate({ query: listApplicationsQuerySchema }),
   asyncHandler(ctrl.listApplicationsHandler)
@@ -21,7 +21,7 @@ router.get(
 // Influencer: apply to a public campaign
 router.post(
   '/',
-  authenticate,
+  authenticate(),
   authorize('influencer'),
   validate({ body: applyToCampaignSchema }),
   asyncHandler(ctrl.applyToCampaignHandler)
@@ -30,7 +30,7 @@ router.post(
 // Influencer: accept a brand invite
 router.post(
   '/accept-invite',
-  authenticate,
+  authenticate(),
   authorize('influencer'),
   asyncHandler(ctrl.acceptInviteHandler)
 );
@@ -38,7 +38,7 @@ router.post(
 // Influencer: decline/withdraw from a brand invite
 router.post(
   '/decline-invite',
-  authenticate,
+  authenticate(),
   authorize('influencer'),
   asyncHandler(ctrl.declineInviteHandler)
 );
@@ -46,7 +46,7 @@ router.post(
 // Brand: approve a specific application
 router.post(
   '/:appId/approve',
-  authenticate,
+  authenticate(),
   authorize('brand_owner', 'admin'),
   asyncHandler(ctrl.approveApplicationHandler)
 );
@@ -54,7 +54,7 @@ router.post(
 // Brand: reject a specific application
 router.post(
   '/:appId/reject',
-  authenticate,
+  authenticate(),
   authorize('brand_owner', 'admin'),
   asyncHandler(ctrl.rejectApplicationHandler)
 );

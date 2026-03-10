@@ -7,7 +7,7 @@ import * as ctrl from './ai.controller';
 
 const router = Router();
 
-router.use(authenticate);
+router.use(authenticate());
 
 router.post(
     '/strategist',

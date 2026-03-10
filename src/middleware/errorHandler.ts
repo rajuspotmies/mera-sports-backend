@@ -10,13 +10,16 @@ export const errorHandler: ErrorRequestHandler = (
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   _next: NextFunction
 ) => {
-  // Log all errors — serialize properly to avoid [object Object]
-  const errMessage = err instanceof Error
-    ? `${err.message}${err.stack ? `\n${err.stack}` : ''}`
-    : JSON.stringify(err, null, 2);
-  logger.error(`${req.method} ${req.path} — ${errMessage}`);
-
+  // ── Handled: AppError (4xx / 5xx business errors) ──────────────────────────
   if (err instanceof AppError) {
+    // 4xx = expected client error → warn, one line, no stack
+    // 5xx = server-side bug → error with stack
+    if (err.statusCode >= 500) {
+      logger.error(`${req.method} ${req.path} — ${err.message}`, { stack: err.stack });
+    } else {
+      logger.warn(`${req.method} ${req.path} — ${err.code}: ${err.message}`);
+    }
+
     res.status(err.statusCode).json({
       success: false,
       error: {
@@ -28,7 +31,10 @@ export const errorHandler: ErrorRequestHandler = (
     return;
   }
 
+  // ── Handled: ZodError (validation) ─────────────────────────────────────────
   if (err instanceof ZodError) {
+    logger.warn(`${req.method} ${req.path} — VALIDATION_ERROR: Invalid request data`);
+
     res.status(400).json({
       success: false,
       error: {
@@ -40,7 +46,11 @@ export const errorHandler: ErrorRequestHandler = (
     return;
   }
 
-  // Unknown errors — never leak internals in production
+  // ── Unexpected: truly unknown errors → always log with full stack ──────────
+  const message = err instanceof Error ? err.message : 'Unknown error';
+  const stack = err instanceof Error ? err.stack : undefined;
+  logger.error(`${req.method} ${req.path} — UNEXPECTED: ${message}`, { stack });
+
   res.status(500).json({
     success: false,
     error: {

@@ -3,7 +3,7 @@ import { authenticate } from '@/middleware/authenticate';
 import { authorize } from '@/middleware/authorize';
 import { validate } from '@/middleware/validate';
 import { upload, setUploadFolder } from '@/middleware/upload';
-import { uploadLimiter } from '@/middleware/rateLimiter';
+import { uploadLimiter, authLimiter } from '@/middleware/rateLimiter';
 import { asyncHandler } from '@/shared/utils/asyncHandler';
 import {
   updateInfluencerProfileSchema,
@@ -12,29 +12,39 @@ import {
   bulkInviteSchema,
 } from './influencers.schema';
 import * as ctrl from './influencers.controller';
+import * as authCtrl from '../auth/auth.controller';
+import { registerSchema, loginSchema, updateMeSchema } from '../auth/auth.schema';
 
 const router = Router();
+
+// ─── Auth Routes (Role: influencer) ──────────────────────────────────────────
+
+router.post('/auth/register', authLimiter, validate({ body: registerSchema }), asyncHandler(authCtrl.registerHandler('influencer')));
+router.post('/auth/login', authLimiter, validate({ body: loginSchema }), asyncHandler(authCtrl.loginHandler('influencer')));
+router.post('/auth/refresh', asyncHandler(authCtrl.refreshHandler('influencer')));
+router.post('/auth/logout', asyncHandler(authCtrl.logoutHandler('influencer')));
+
+router.get('/auth/me', authenticate('influencer'), asyncHandler(authCtrl.getMeHandler));
+router.put('/auth/me', authenticate('influencer'), validate({ body: updateMeSchema }), asyncHandler(authCtrl.updateMeHandler));
+router.delete('/auth/me', authenticate('influencer'), asyncHandler(authCtrl.deleteMeHandler('influencer')));
 
 // ─── Influencer own profile ──────────────────────────────────────────────────
 router.get(
   '/profile',
-  authenticate,
-  authorize('influencer'),
+  authenticate('influencer'),
   asyncHandler(ctrl.getOwnProfileHandler)
 );
 
 router.put(
   '/profile',
-  authenticate,
-  authorize('influencer'),
+  authenticate('influencer'),
   validate({ body: updateInfluencerProfileSchema }),
   asyncHandler(ctrl.updateOwnProfileHandler)
 );
 
 router.post(
   '/profile/avatar',
-  authenticate,
-  authorize('influencer'),
+  authenticate('influencer'),
   uploadLimiter,
   setUploadFolder('avatars'),
   upload.single('file'),
@@ -42,9 +52,10 @@ router.post(
 );
 
 // ─── Discover (used by brands + admin) ───────────────────────────────────────
+// These routes accept any authenticated user, then authorize checks the role
 router.get(
   '/search',
-  authenticate,
+  authenticate(),
   authorize('brand_owner', 'admin'),
   validate({ query: searchInfluencersSchema }),
   asyncHandler(ctrl.searchInfluencersHandler)
@@ -52,14 +63,14 @@ router.get(
 
 router.get(
   '/:id',
-  authenticate,
+  authenticate(),
   asyncHandler(ctrl.getInfluencerByIdHandler)
 );
 
 // ─── Invites (brand sends) ────────────────────────────────────────────────────
 router.post(
   '/invite',
-  authenticate,
+  authenticate(),
   authorize('brand_owner', 'admin'),
   validate({ body: inviteInfluencerSchema }),
   asyncHandler(ctrl.inviteInfluencerHandler)
@@ -67,7 +78,7 @@ router.post(
 
 router.post(
   '/bulk-invite',
-  authenticate,
+  authenticate(),
   authorize('brand_owner', 'admin'),
   validate({ body: bulkInviteSchema }),
   asyncHandler(ctrl.bulkInviteHandler)

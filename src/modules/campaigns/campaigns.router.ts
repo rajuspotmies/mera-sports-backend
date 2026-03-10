@@ -24,7 +24,7 @@ const router = Router();
 // ─── Public discover (influencer side, authenticated) ────────────────────────
 router.get(
   '/discover',
-  authenticate,
+  authenticate(),
   authorize('influencer', 'admin'),
   validate({ query: listCampaignsQuerySchema }),
   asyncHandler(ctrl.discoverCampaignsHandler)
@@ -33,14 +33,14 @@ router.get(
 // ─── Brand campaigns ──────────────────────────────────────────────────────────
 router.get(
   '/',
-  authenticate,
+  authenticate(),
   validate({ query: listCampaignsQuerySchema }),
   asyncHandler(ctrl.listCampaignsHandler)
 );
 
 router.post(
   '/',
-  authenticate,
+  authenticate(),
   authorize('brand_owner', 'admin'),
   validate({ body: createCampaignSchema }),
   asyncHandler(ctrl.createCampaignHandler)
@@ -48,13 +48,13 @@ router.post(
 
 router.get(
   '/:id',
-  authenticate,
+  authenticate(),
   asyncHandler(ctrl.getCampaignHandler)
 );
 
 router.put(
   '/:id',
-  authenticate,
+  authenticate(),
   authorize('brand_owner', 'admin'),
   validate({ body: updateCampaignSchema }),
   asyncHandler(ctrl.updateCampaignHandler)
@@ -62,28 +62,28 @@ router.put(
 
 router.delete(
   '/:id',
-  authenticate,
+  authenticate(),
   authorize('brand_owner', 'admin'),
   asyncHandler(ctrl.deleteCampaignHandler)
 );
 
 router.post(
   '/:id/launch',
-  authenticate,
+  authenticate(),
   authorize('brand_owner', 'admin'),
   asyncHandler(ctrl.launchCampaignHandler)
 );
 
 router.post(
   '/:id/close',
-  authenticate,
+  authenticate(),
   authorize('brand_owner', 'admin'),
   asyncHandler(ctrl.closeCampaignHandler)
 );
 
 router.post(
   '/:id/thumbnail',
-  authenticate,
+  authenticate(),
   authorize('brand_owner', 'admin'),
   uploadLimiter,
   setUploadFolder('campaigns'),

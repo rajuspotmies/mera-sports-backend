@@ -9,11 +9,11 @@ import * as ctrl from './scripts.controller';
 // Mounted at /campaigns/:campaignId/scripts
 const router = Router({ mergeParams: true });
 
-router.get('/', authenticate, authorize('brand_owner', 'admin'), asyncHandler(ctrl.listScriptsHandler));
+router.get('/', authenticate(), authorize('brand_owner', 'admin'), asyncHandler(ctrl.listScriptsHandler));
 
 router.post(
   '/',
-  authenticate,
+  authenticate(),
   authorize('influencer'),
   uploadLimiter,
   setUploadFolder('scripts'),
@@ -21,7 +21,7 @@ router.post(
   asyncHandler(ctrl.submitScriptHandler)
 );
 
-router.post('/:scriptId/approve', authenticate, authorize('brand_owner', 'admin'), asyncHandler(ctrl.approveScriptHandler));
-router.post('/:scriptId/revise', authenticate, authorize('brand_owner', 'admin'), asyncHandler(ctrl.requestRevisionHandler));
+router.post('/:scriptId/approve', authenticate(), authorize('brand_owner', 'admin'), asyncHandler(ctrl.approveScriptHandler));
+router.post('/:scriptId/revise', authenticate(), authorize('brand_owner', 'admin'), asyncHandler(ctrl.requestRevisionHandler));
 
 export default router;

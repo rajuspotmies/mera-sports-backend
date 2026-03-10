@@ -11,7 +11,7 @@ const router = Router();
 // Notice: webhook route usually does not require authentication
 router.post('/webhook', asyncHandler(ctrl.razorpayWebhookHandler));
 
-router.use(authenticate);
+router.use(authenticate());
 
 // These routes assume they will be mounted under /api/v1/campaigns/:campaignId/payment
 router.post(

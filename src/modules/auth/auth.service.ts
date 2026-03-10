@@ -119,18 +119,15 @@ export async function login(dto: LoginDTO) {
   const [user] = await db.select().from(users).where(eq(users.email, dto.email)).limit(1);
 
   if (!user) {
-    console.error(`[Auth] Login failed: User not found for email ${dto.email}`);
     throw new UnauthorizedError('Invalid email or password');
   }
 
   if (!user.isActive) {
-    console.error(`[Auth] Login failed: User ${dto.email} is inactive`);
     throw new UnauthorizedError('Invalid email or password');
   }
 
   const passwordMatch = await bcrypt.compare(dto.password, user.passwordHash);
   if (!passwordMatch) {
-    console.error(`[Auth] Login failed: Password mismatch for user ${dto.email}`);
     throw new UnauthorizedError('Invalid email or password');
   }
 

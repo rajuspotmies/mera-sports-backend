@@ -3,10 +3,6 @@
  *
  * Usage:
  *   pnpm db:seed
- *
- * NOTE: When you share src/mocks/data.ts from the frontend,
- * replace the hardcoded arrays below with imports from that file
- * and map the fields to match the DB schema.
  */
 
 import dotenv from 'dotenv';
@@ -21,6 +17,11 @@ import {
   campaigns,
   campaignInfluencers,
   negotiations,
+  scriptVersions,
+  workSubmissions,
+  payments,
+  conversations,
+  messages,
 } from './schema';
 import { logger } from '@/shared/utils/logger';
 
@@ -28,6 +29,11 @@ async function seed() {
   logger.info('Starting seed...');
 
   // ─── Clean existing data (order matters — FK constraints) ──────────────────
+  await db.delete(messages);
+  await db.delete(conversations);
+  await db.delete(payments);
+  await db.delete(workSubmissions);
+  await db.delete(scriptVersions);
   await db.delete(negotiations);
   await db.delete(campaignInfluencers);
   await db.delete(campaigns);
@@ -37,9 +43,9 @@ async function seed() {
 
   logger.info('Cleared existing data');
 
-  // ─── Brand owner ───────────────────────────────────────────────────────────
   const passwordHash = await bcrypt.hash('password123', 12);
 
+  // ─── Brand owner ───────────────────────────────────────────────────────────
   const [brandUser] = await db
     .insert(users)
     .values({
@@ -47,6 +53,7 @@ async function seed() {
       passwordHash,
       name: 'Aria Sharma',
       role: 'brand_owner',
+      isVerified: true,
     })
     .returning();
 
@@ -58,6 +65,7 @@ async function seed() {
       industry: 'Beauty & Skincare',
       website: 'https://zephyrbeauty.com',
       description: 'Clean beauty brand focused on sustainable ingredients.',
+      verified: true,
     })
     .returning();
 
@@ -69,12 +77,14 @@ async function seed() {
     passwordHash,
     name: 'Platform Admin',
     role: 'admin',
+    isVerified: true,
   });
 
   // ─── Influencers ──────────────────────────────────────────────────────────
   const influencerData = [
     {
       email: 'priya@demo.com',
+      phoneNumber: '9100000001',
       name: 'Priya Mehta',
       handle: '@priyamehta',
       tier: 'micro' as const,
@@ -88,6 +98,7 @@ async function seed() {
     },
     {
       email: 'rohan@demo.com',
+      phoneNumber: '9100000002',
       name: 'Rohan Kapoor',
       handle: '@rohanlifestyle',
       tier: 'mid' as const,
@@ -100,17 +111,32 @@ async function seed() {
       rateCard: { instagram_reel: 20000, youtube_video: 50000 },
     },
     {
-      email: 'sneha@demo.com',
-      name: 'Sneha Patel',
-      handle: '@snehafitness',
+      email: 'test1@demo.com',
+      phoneNumber: '9100000003',
+      name: 'Test Influencer 1',
+      handle: '@testinfluencer1',
       tier: 'nano' as const,
-      followerCount: 8500,
-      engagementRate: '7.80',
-      niches: ['Fitness', 'Wellness'],
+      followerCount: 5000,
+      engagementRate: '8.50',
+      niches: ['Tech', 'Lifestyle'],
       location: 'Bangalore, India',
-      bio: 'Certified PT | Real fitness for real people.',
-      platforms: [{ platform: 'instagram', handle: '@snehafitness', followers: 8500 }],
-      rateCard: { instagram_reel: 3000, instagram_post: 2000 },
+      bio: 'Exploring the intersection of tech and life.',
+      platforms: [{ platform: 'instagram', handle: '@testinfluencer1', followers: 5000 }],
+      rateCard: { instagram_reel: 2500, instagram_post: 1500 },
+    },
+    {
+      email: 'test2@demo.com',
+      phoneNumber: '9100000004',
+      name: 'Test Influencer 2',
+      handle: '@testinfluencer2',
+      tier: 'micro' as const,
+      followerCount: 15000,
+      engagementRate: '5.20',
+      niches: ['Fashion', 'Beauty'],
+      location: 'Hyderabad, India',
+      bio: 'Style is a way to say who you are.',
+      platforms: [{ platform: 'instagram', handle: '@testinfluencer2', followers: 15000 }],
+      rateCard: { instagram_reel: 7000, instagram_post: 4000 },
     },
   ];
 
@@ -118,7 +144,14 @@ async function seed() {
   for (const inf of influencerData) {
     const [u] = await db
       .insert(users)
-      .values({ email: inf.email, passwordHash, name: inf.name, role: 'influencer' })
+      .values({ 
+        email: inf.email, 
+        phoneNumber: inf.phoneNumber,
+        passwordHash, 
+        name: inf.name, 
+        role: 'influencer', 
+        isVerified: true 
+      })
       .returning();
 
     const [profile] = await db
@@ -134,10 +167,11 @@ async function seed() {
         engagementRate: inf.engagementRate,
         platforms: inf.platforms,
         rateCard: inf.rateCard as unknown as Record<string, number>,
+        isVerified: true,
       })
       .returning();
 
-    createdInfluencers.push(profile);
+    createdInfluencers.push({ ...profile, userId: u.id });
     logger.info(`Created influencer: ${inf.name} (${inf.tier})`);
   }
 
@@ -170,44 +204,23 @@ async function seed() {
     })
     .returning();
 
-  const [campaign2] = await db
-    .insert(campaigns)
-    .values({
-      brandId: brand.id,
-      name: 'Brand Story — UGC Pack',
-      type: 'ugc',
-      visibility: 'private',
-      status: 'draft',
-      objective: 'Content Creation',
-      budgetMode: 'paid_product',
-      budgetTierPricing: [{ tier: 'nano', rate: 2000 }, { tier: 'micro', rate: 5000 }],
-      budgetTotal: '50000',
-      niches: ['Beauty', 'Lifestyle'],
-      creatorSizes: ['nano', 'micro'],
-      brief: 'Create UGC content for our brand story — unboxing and first impressions.',
-      deliverables: [{ type: 'instagram_reel', count: 2 }],
-    })
-    .returning();
+  logger.info(`Created campaign: ${campaign1.name}`);
 
-  logger.info(`Created ${2} campaigns`);
+  // ─── Application States ───────────────────────────────────────────────────
+  
+  // 1. Priya: Applied (New Application)
+  await db.insert(campaignInfluencers).values({
+    campaignId: campaign1.id,
+    influencerId: createdInfluencers[0].id,
+    origin: 'influencer_application',
+    status: 'applied',
+    tierRate: '8000',
+    applicationNote: 'I love clean beauty! Would be thrilled to collaborate.',
+    appliedAt: new Date(),
+  });
 
-  // ─── Applications ─────────────────────────────────────────────────────────
-  // Priya applied to Summer Glow
-  const [ci1] = await db
-    .insert(campaignInfluencers)
-    .values({
-      campaignId: campaign1.id,
-      influencerId: createdInfluencers[0].id,
-      origin: 'influencer_application',
-      status: 'applied',
-      tierRate: '8000',
-      applicationNote: 'I love clean beauty! Would be thrilled to collaborate.',
-      appliedAt: new Date(),
-    })
-    .returning();
-
-  // Rohan was invited to Summer Glow and is negotiating
-  const [ci2] = await db
+  // 2. Rohan: Negotiating
+  const [ciRohan] = await db
     .insert(campaignInfluencers)
     .values({
       campaignId: campaign1.id,
@@ -218,30 +231,107 @@ async function seed() {
     })
     .returning();
 
-  // Negotiation history for Rohan
   await db.insert(negotiations).values([
     {
-      campaignInfluencerId: ci2.id,
+      campaignInfluencerId: ciRohan.id,
       party: 'brand',
       amount: '20000',
       note: 'Looking forward to working with you!',
     },
     {
-      campaignInfluencerId: ci2.id,
+      campaignInfluencerId: ciRohan.id,
       party: 'influencer',
       amount: '22000',
       note: 'I typically charge 22k for reels of this scope.',
     },
   ]);
 
-  logger.info('Created applications and negotiation history');
+  // 3. Test Influencer 1: Script Review (Stage: Scripting)
+  const [ciTest1] = await db
+    .insert(campaignInfluencers)
+    .values({
+      campaignId: campaign1.id,
+      influencerId: createdInfluencers[2].id,
+      origin: 'brand_invite',
+      status: 'script_review',
+      tierRate: '2500',
+      agreedBudget: '2500',
+      chatEnabled: true,
+      acceptedAt: new Date(),
+    })
+    .returning();
+
+  await db.insert(scriptVersions).values({
+    campaignInfluencerId: ciTest1.id,
+    versionNumber: 1,
+    fileUrl: 'https://example.com/scripts/test1_v1.pdf',
+    fileName: 'Summer_Glow_Script_Test1.pdf',
+    status: 'pending',
+  });
+
+  // 4. Test Influencer 2: Work Review (Stage: Content Creation)
+  const [ciTest2] = await db
+    .insert(campaignInfluencers)
+    .values({
+      campaignId: campaign1.id,
+      influencerId: createdInfluencers[3].id,
+      origin: 'influencer_application',
+      status: 'work_review',
+      tierRate: '7000',
+      agreedBudget: '7000',
+      chatEnabled: true,
+      acceptedAt: new Date(),
+      paidAt: new Date(), // Simulating it was paid
+    })
+    .returning();
+
+  await db.insert(workSubmissions).values({
+    campaignInfluencerId: ciTest2.id,
+    type: 'instagram_reel',
+    url: 'https://www.instagram.com/reels/test_reel_2/',
+    fileName: 'final_reel_v2.mp4',
+    proofOfWorkUrl: 'https://example.com/proofs/test2_proof.jpg',
+    status: 'pending',
+  });
+
+  // ─── Conversations & Messages for Test Influencer 1 ───────────────────────
+  const [conv1] = await db
+    .insert(conversations)
+    .values({
+      campaignId: campaign1.id,
+      brandId: brand.id,
+      influencerId: createdInfluencers[2].id,
+      status: 'active',
+      lastMessage: 'Hey! I have submitted my script for review.',
+      lastMessageAt: new Date(),
+      brandUnread: 1,
+    })
+    .returning();
+
+  await db.insert(messages).values([
+    {
+      conversationId: conv1.id,
+      senderId: brandUser.id,
+      senderRole: 'brand',
+      content: 'Welcome to the campaign! Excited to see your ideas.',
+    },
+    {
+      conversationId: conv1.id,
+      senderId: createdInfluencers[2].userId,
+      senderRole: 'influencer',
+      content: 'Thanks! I have submitted my script for review.',
+    },
+  ]);
+
+  logger.info('Created applications, scripts, work submissions, and conversations');
   logger.info('\n✅ Seed complete!\n');
   logger.info('Demo accounts:');
   logger.info('  brand@demo.com     / password123  (brand_owner)');
   logger.info('  admin@demo.com     / password123  (admin)');
-  logger.info('  priya@demo.com     / password123  (influencer, micro)');
-  logger.info('  rohan@demo.com     / password123  (influencer, mid)');
-  logger.info('  sneha@demo.com     / password123  (influencer, nano)');
+  logger.info('  priya@demo.com     / password123  (influencer, micro) - Applied');
+  logger.info('  rohan@demo.com     / password123  (influencer, mid)   - Negotiating');
+  logger.info('  test1@demo.com     / password123  (influencer, nano)  - Script Review');
+  logger.info('  test2@demo.com     / password123  (influencer, micro) - Work Review');
 
   process.exit(0);
 }

@@ -5,6 +5,7 @@ import type { NewNotification } from '@/db/schema';
 import { parsePagination, buildPaginationMeta, getOffset } from '@/shared/utils/pagination';
 import { emitToUser } from '@/socket';
 import { notificationQueue, emailQueue } from '@/jobs/queue';
+import { fcmTokens } from '@/db/schema';
 
 // ─── Create & emit ────────────────────────────────────────────────────────────
 
@@ -81,4 +82,37 @@ export async function markAllNotificationsRead(userId: string) {
     .update(notifications)
     .set({ isRead: true })
     .where(eq(notifications.userId, userId));
+}
+
+// ─── FCM Token Management ───────────────────────────────────────────────────
+
+export async function registerFcmToken(userId: string, token: string, deviceType?: string) {
+  await db
+    .insert(fcmTokens)
+    .values({
+      userId,
+      token,
+      deviceType,
+      updatedAt: new Date(),
+    })
+    .onConflictDoUpdate({
+      target: fcmTokens.token,
+      set: {
+        userId,
+        deviceType,
+        updatedAt: new Date(),
+      },
+    });
+}
+
+export async function unregisterFcmToken(token: string) {
+  await db.delete(fcmTokens).where(eq(fcmTokens.token, token));
+}
+
+export async function getTokensForUser(userId: string) {
+  const tokens = await db
+    .select({ token: fcmTokens.token })
+    .from(fcmTokens)
+    .where(eq(fcmTokens.userId, userId));
+  return tokens.map((t) => t.token);
 }

@@ -6,6 +6,7 @@ import { checkDatabaseConnection } from './config/database';
 import { checkRedisConnection } from './config/redis';
 import { logger } from './shared/utils/logger';
 import { startWorkers } from './jobs';
+import { initializeFcm } from './shared/services/fcm.service';
 
 async function main() {
   // ─── Startup checks ────────────────────────────────────────────────────────
@@ -28,6 +29,9 @@ async function main() {
 
   // Start background workers
   startWorkers();
+
+  // Initialize Firebase Admin SDK
+  initializeFcm();
 
   // ─── Server setup ──────────────────────────────────────────────────────────
   const app = createApp();

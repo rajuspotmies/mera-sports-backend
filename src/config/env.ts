@@ -32,9 +32,13 @@ const envSchema = z.object({
   S3_BUCKET_NAME: z.string().default('mutiny-uploads'),
 
   // AI
-  AI_PROVIDER: z.enum(['anthropic', 'openai']).default('anthropic'),
+  AI_PROVIDER: z.enum(['anthropic', 'openai', 'azure']).default('anthropic'),
   ANTHROPIC_API_KEY: z.string().optional(),
   OPENAI_API_KEY: z.string().optional(),
+  AZURE_OPENAI_API_KEY: z.string().optional(),
+  AZURE_OPENAI_ENDPOINT: z.string().optional(),
+  AZURE_OPENAI_DEPLOYMENT: z.string().optional(),
+  AZURE_OPENAI_API_VERSION: z.string().default('2023-05-15'),
 
   // Payments
   RAZORPAY_KEY_ID: z.string().optional(),

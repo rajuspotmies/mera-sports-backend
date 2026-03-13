@@ -54,6 +54,12 @@ const envSchema = z.object({
 
   // Logging
   LOG_LEVEL: z.enum(['error', 'warn', 'info', 'debug']).default('info'),
+
+  // WhatsApp
+  WHATSAPP_PHONE_NUMBER_ID: z.string().optional(),
+  WHATSAPP_ACCESS_TOKEN: z.string().optional(),
+  WHATSAPP_API_VERSION: z.string().default('v22.0'),
+  WHATSAPP_OTP_TEMPLATE_NAME: z.string().default('otp_verification'),
 });
 
 const parsed = envSchema.safeParse(process.env);

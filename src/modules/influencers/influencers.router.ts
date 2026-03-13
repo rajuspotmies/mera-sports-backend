@@ -13,14 +13,13 @@ import {
 } from './influencers.schema';
 import * as ctrl from './influencers.controller';
 import * as authCtrl from '../auth/auth.controller';
-import { registerSchema, loginSchema, updateMeSchema, sendOtpSchema, verifyOtpSchema } from '../auth/auth.schema';
+import { updateMeSchema, sendOtpSchema, verifyOtpSchema } from '../auth/auth.schema';
 
 const router = Router();
 
 // ─── Auth Routes (Role: influencer) ──────────────────────────────────────────
+// Note: Influencers use OTP-based authentication (phone number)
 
-router.post('/auth/register', authLimiter, validate({ body: registerSchema }), asyncHandler(authCtrl.registerHandler('influencer')));
-router.post('/auth/login', authLimiter, validate({ body: loginSchema }), asyncHandler(authCtrl.loginHandler('influencer')));
 router.post('/auth/send-otp', authLimiter, validate({ body: sendOtpSchema }), asyncHandler(authCtrl.sendOtpHandler));
 router.post('/auth/verify-otp', authLimiter, validate({ body: verifyOtpSchema }), asyncHandler(authCtrl.verifyOtpHandler('influencer')));
 router.post('/auth/refresh', asyncHandler(authCtrl.refreshHandler('influencer')));

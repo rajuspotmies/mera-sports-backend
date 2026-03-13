@@ -88,3 +88,5 @@ export const notificationTypeEnum = pgEnum('notification_type', [
   'chat',
   'system',
 ]);
+
+export const portfolioMediaTypeEnum = pgEnum('portfolio_media_type', ['image', 'video', 'link']);

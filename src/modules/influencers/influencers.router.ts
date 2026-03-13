@@ -10,6 +10,8 @@ import {
   searchInfluencersSchema,
   inviteInfluencerSchema,
   bulkInviteSchema,
+  addPortfolioItemSchema,
+  updatePortfolioItemSchema,
 } from './influencers.schema';
 import * as ctrl from './influencers.controller';
 import * as authCtrl from '../auth/auth.controller';
@@ -50,6 +52,27 @@ router.post(
   setUploadFolder('avatars'),
   upload.single('file'),
   asyncHandler(ctrl.uploadAvatarHandler)
+);
+
+// ─── Portfolio ───────────────────────────────────────────────────────────────
+router.post(
+  '/portfolio',
+  authenticate('influencer'),
+  validate({ body: addPortfolioItemSchema }),
+  asyncHandler(ctrl.addPortfolioItemHandler)
+);
+
+router.patch(
+  '/portfolio/:itemId',
+  authenticate('influencer'),
+  validate({ body: updatePortfolioItemSchema }),
+  asyncHandler(ctrl.updatePortfolioItemHandler)
+);
+
+router.delete(
+  '/portfolio/:itemId',
+  authenticate('influencer'),
+  asyncHandler(ctrl.deletePortfolioItemHandler)
 );
 
 // ─── Discover (used by brands + admin) ───────────────────────────────────────

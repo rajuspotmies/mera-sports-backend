@@ -45,7 +45,19 @@ export const bulkInviteSchema = z.object({
   message: z.string().max(500).optional(),
 });
 
+export const addPortfolioItemSchema = z.object({
+  title: z.string().max(255).optional(),
+  description: z.string().max(2000).optional(),
+  mediaUrl: z.string().url(),
+  mediaType: z.enum(['image', 'video', 'link']),
+  externalUrl: z.string().url().optional(),
+});
+
+export const updatePortfolioItemSchema = addPortfolioItemSchema.partial();
+
 export type UpdateInfluencerProfileDTO = z.infer<typeof updateInfluencerProfileSchema>;
 export type SearchInfluencersQuery = z.infer<typeof searchInfluencersSchema>;
 export type InviteInfluencerDTO = z.infer<typeof inviteInfluencerSchema>;
 export type BulkInviteDTO = z.infer<typeof bulkInviteSchema>;
+export type AddPortfolioItemDTO = z.infer<typeof addPortfolioItemSchema>;
+export type UpdatePortfolioItemDTO = z.infer<typeof updatePortfolioItemSchema>;

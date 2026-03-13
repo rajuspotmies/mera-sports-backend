@@ -1,6 +1,8 @@
 import { Job } from 'bull';
 import { db } from '@/db';
 import { notifications } from '@/db/schema';
+import { getTokensForUser } from '@/modules/notifications/notifications.service';
+import { sendPushNotification } from '@/shared/services/fcm.service';
 
 export async function processNotificationJob(job: Job) {
     // Notification job processing
@@ -25,6 +27,20 @@ export async function processNotificationJob(job: Job) {
                 actionUrl: data.actionUrl,
             });
             // Note: we might emit websocket here if we have a Pub/Sub setup or standard IO emitter
+            
+            // Send FCM Push Notification
+            const tokens = await getTokensForUser(data.userId);
+            if (tokens.length > 0) {
+                await sendPushNotification(
+                    tokens,
+                    data.title,
+                    data.message,
+                    { 
+                        type: data.type,
+                        actionUrl: data.actionUrl || ''
+                    }
+                );
+            }
         }
 
     } catch (error) {

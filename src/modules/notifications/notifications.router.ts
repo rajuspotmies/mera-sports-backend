@@ -10,5 +10,6 @@ router.use(authenticate());
 router.get('/', asyncHandler(ctrl.listNotificationsHandler));
 router.post('/:id/read', asyncHandler(ctrl.markReadHandler));
 router.post('/read-all', asyncHandler(ctrl.markAllReadHandler));
+router.post('/register-token', asyncHandler(ctrl.registerTokenHandler));
 
 export default router;

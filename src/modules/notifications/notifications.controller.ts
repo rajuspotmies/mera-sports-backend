@@ -19,3 +19,13 @@ export async function markAllReadHandler(req: Request, res: Response): Promise<v
   await notificationsService.markAllNotificationsRead(req.user.sub);
   sendSuccess(res, { message: 'All notifications marked as read' });
 }
+
+export async function registerTokenHandler(req: Request, res: Response): Promise<void> {
+  const { token, deviceType } = req.body;
+  if (!token) {
+    res.status(400).json({ success: false, message: 'Token is required' });
+    return;
+  }
+  await notificationsService.registerFcmToken(req.user.sub, token, deviceType);
+  sendSuccess(res, { message: 'FCM token registered successfully' });
+}

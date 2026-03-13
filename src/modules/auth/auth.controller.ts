@@ -139,3 +139,35 @@ export const deleteMeHandler = (role: Role) => {
     }
   };
 };
+
+export const sendOtpHandler = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const result = await authService.sendOtp(req.body);
+    sendSuccess(res, result);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const verifyOtpHandler = (role: Role) => {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { accessToken, refreshToken, user } = await authService.verifyOtp(req.body);
+
+      // Safety: verification logic assumes role is 'influencer' for new registrations,
+      // but if user exists, we should check their role matches the intended flow
+      if (user.role !== role) {
+        res.status(403).json({
+          success: false,
+          error: { code: 'FORBIDDEN', message: `This verification endpoint is for ${role} accounts only` },
+        });
+        return;
+      }
+
+      setAuthCookies(res, role, accessToken, refreshToken);
+      sendSuccess(res, { user });
+    } catch (error) {
+      next(error);
+    }
+  };
+};

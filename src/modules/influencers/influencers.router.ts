@@ -16,6 +16,8 @@ import {
 import * as ctrl from './influencers.controller';
 import * as authCtrl from '../auth/auth.controller';
 import { updateMeSchema, sendOtpSchema, verifyOtpSchema } from '../auth/auth.schema';
+import { getMyApplicationsHandler } from '../applications/applications.controller';
+import { listApplicationsQuerySchema } from '../applications/applications.schema';
 
 const router = Router();
 
@@ -73,6 +75,14 @@ router.delete(
   '/portfolio/:itemId',
   authenticate('influencer'),
   asyncHandler(ctrl.deletePortfolioItemHandler)
+);
+
+// ─── My applications (campaigns invited to or applied to) ───────────────────────
+router.get(
+  '/applications',
+  authenticate('influencer'),
+  validate({ query: listApplicationsQuerySchema }),
+  asyncHandler(getMyApplicationsHandler)
 );
 
 // ─── Discover (used by brands + admin) ───────────────────────────────────────

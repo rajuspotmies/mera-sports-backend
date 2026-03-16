@@ -7,8 +7,8 @@ import {
   timestamp,
   integer,
   jsonb,
+  numeric,
 } from 'drizzle-orm/pg-core';
-import { numeric } from 'drizzle-orm/pg-core';
 import {
   campaignTypeEnum,
   campaignVisibilityEnum,
@@ -40,6 +40,12 @@ export const campaigns = pgTable('campaigns', {
     .default('10.00')
     .notNull(),
 
+  // Budget strategy / tiers
+  creatorStrategy: varchar('creator_strategy', { length: 50 }), // 'single' | 'bulk'
+  mixMode: boolean('mix_mode'), // true = multi tier, false = single tier
+  selectedTier: varchar('selected_tier', { length: 20 }), // when mixMode === false
+  productDetails: text('product_details'),
+
   // Campaign details
   location: varchar('location', { length: 255 }),
   niches: text('niches').array().default([]).notNull(),
@@ -51,7 +57,7 @@ export const campaigns = pgTable('campaigns', {
   pendingSubmissions: integer('pending_submissions').default(0).notNull(),
   progress: integer('progress').default(0).notNull(),
 
-  // Creative
+  // Creative / deliverables
   brief: text('brief'),
   dos: text('dos').array().default([]).notNull(),
   donts: text('donts').array().default([]).notNull(),
@@ -64,11 +70,24 @@ export const campaigns = pgTable('campaigns', {
     .notNull(),
   proofOfWorkReq: boolean('proof_of_work_req').default(false).notNull(),
 
+  // More detailed deliverables/config
+  platform: varchar('platform', { length: 50 }), // instagram | youtube | twitter
+  contentTypes: text('content_types').array().default([]).notNull(),
+  postingType: varchar('posting_type', { length: 50 }), // creator | brand
+  usageRights: varchar('usage_rights', { length: 50 }), // e.g. 30d, 90d
+  scriptType: varchar('script_type', { length: 50 }), // creator | brand
+  scriptFlow: text('script_flow'),
+  scriptFileKey: varchar('script_file_key', { length: 500 }),
+
   // Media
   thumbnailUrl: varchar('thumbnail_url', { length: 500 }),
 
   // Lifecycle
+  // Legacy single deadline; still populated from applicationDeadline when present.
   deadline: timestamp('deadline', { withTimezone: true }),
+  applicationDeadline: timestamp('application_deadline', { withTimezone: true }),
+  workDeadline: timestamp('work_deadline', { withTimezone: true }),
+  scriptDeadline: timestamp('script_deadline', { withTimezone: true }),
   launchedAt: timestamp('launched_at', { withTimezone: true }),
   closedAt: timestamp('closed_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),

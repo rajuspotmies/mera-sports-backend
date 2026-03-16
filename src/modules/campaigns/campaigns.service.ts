@@ -113,6 +113,7 @@ export async function getCampaignById(id: string, requester: JWTPayload) {
     throw new ForbiddenError('This campaign is private');
   }
 
+  // TODO: extend to return normalized basics/deliverables/budget/meta + derived flags
   return campaign;
 }
 
@@ -121,32 +122,173 @@ export async function getCampaignById(id: string, requester: JWTPayload) {
 export async function createCampaign(brandUser: JWTPayload, dto: CreateCampaignDTO): Promise<Campaign> {
   if (!brandUser.brandId) throw new ForbiddenError('Brand profile not found');
 
+  // Prefer new structured payload (basics/deliverables/budget/meta) but keep
+  // backward compatibility with legacy flat fields where possible.
+  const basics = dto.basics;
+  const deliverables = dto.deliverables;
+  const budget = dto.budget;
+  const meta = dto.meta;
+
+  const name = basics?.campaignName ?? dto.name ?? '';
+  const type = basics?.type ?? dto.type ?? 'influencer';
+  const visibility = basics?.visibility ?? dto.visibility ?? 'private';
+  const objective =
+    basics?.objective ?? dto.objective ?? budget?.productDetails ?? dto.budget?.productDetails;
+
+  const budgetMode =
+    budget?.budgetMode ?? dto.budgetMode ?? dto.budget?.mode ?? 'paid';
+
+  const budgetTierPricing =
+    budget?.tierConfig?.map((t) => ({ tier: t.tier, rate: t.amount })) ??
+    dto.budgetTierPricing ??
+    dto.budget?.tierPricing?.map((t) => ({ tier: t.tier, rate: t.amount })) ??
+    [];
+
+  const budgetTotal =
+    (budget?.totalBudget ?? dto.budgetTotal ?? dto.budget?.total)?.toString();
+
+  const platformFeePercent =
+    (budget?.platformFeePercent ??
+      dto.platformFeePercent ??
+      dto.budget?.platformFeePercent)?.toString() || '10';
+
+  const location =
+    basics?.location ?? dto.location ?? dto.productLocation;
+
+  const niches =
+    (basics?.niche ? [basics.niche] : undefined) ?? dto.niches ?? [];
+
+  const creatorSizes =
+    (budget?.creatorSizes && budget.creatorSizes.length > 0
+      ? budget.creatorSizes
+      : undefined) ??
+    dto.creatorSizes ??
+    dto.budget?.creatorSizes ??
+    [];
+
+  const brief =
+    deliverables?.brandGuidelines ??
+    dto.brief ??
+    dto.requirements?.brandGuidelines;
+
+  const referenceUrls =
+    (Array.isArray(deliverables?.references)
+      ? deliverables?.references
+      : deliverables?.references
+        ? [deliverables.references]
+        : undefined) ??
+    dto.referenceUrls ??
+    (dto.requirements?.references
+      ? dto.requirements.references.split('\n').filter(Boolean)
+      : undefined) ??
+    [];
+
+  const hashtags = meta?.hashtags ?? dto.hashtags ?? [];
+
+  const deliverablesArray =
+    dto.deliverables && dto.deliverables.length > 0
+      ? dto.deliverables
+      : dto.requirements?.contentTypes?.map((c) => ({ type: c, count: 1 })) ??
+        [];
+
+  const proofOfWorkReq =
+    deliverables?.proofOfWorkRequired ??
+    meta?.proofOfWorkReq ??
+    dto.proofOfWorkReq ??
+    false;
+
+  const applicationDeadlineStr =
+    budget?.applicationDeadline ?? dto.timeline?.applicationDeadline ?? dto.deadline;
+  const workDeadlineStr =
+    budget?.workDeadline ?? dto.timeline?.workDeadline;
+  const scriptDeadlineStr =
+    budget?.scriptDeadline ?? dto.timeline?.scriptDeadline;
+
+  const applicationDeadline = applicationDeadlineStr
+    ? new Date(applicationDeadlineStr)
+    : undefined;
+  const workDeadline = workDeadlineStr ? new Date(workDeadlineStr) : undefined;
+  const scriptDeadline = scriptDeadlineStr ? new Date(scriptDeadlineStr) : undefined;
+
+  const thumbnailUrl = basics?.coverImageUrl ?? dto.thumbnailUrl;
+
+  const platform =
+    deliverables?.platform ?? dto.requirements?.platform;
+
+  const contentTypes =
+    deliverables?.contentTypes ??
+    dto.requirements?.contentTypes ??
+    [];
+
+  const postingType =
+    deliverables?.postingType ?? dto.requirements?.postingType;
+
+  const usageRights =
+    deliverables?.usageRights ?? undefined;
+
+  const scriptType =
+    deliverables?.scriptType ?? dto.requirements?.scriptType;
+
+  const scriptFlow =
+    deliverables?.scriptFlow ?? undefined;
+
+  const scriptFileKey =
+    deliverables?.scriptFileName ?? undefined;
+
+  const creatorStrategy =
+    budget?.creatorStrategy ?? dto.budget?.strategy;
+
+  const mixMode =
+    budget?.mixMode ?? dto.budget?.mixMode;
+
+  const selectedTier =
+    budget?.selectedTier ?? dto.budget?.selectedTier;
+
+  const productDetails =
+    budget?.productDetails ?? dto.budget?.productDetails;
+
+  const status =
+    meta?.status ?? dto.status ?? 'draft';
+
   const [campaign] = await db
     .insert(campaigns)
     .values({
       brandId: brandUser.brandId,
-      name: dto.name || '',
-      type: dto.type || 'influencer',
-      visibility: dto.visibility || 'private',
-      objective: dto.objective || dto.budget?.productDetails,
-      budgetMode: dto.budgetMode || dto.budget?.mode || 'paid',
-      budgetTierPricing: (dto.budgetTierPricing && dto.budgetTierPricing.length > 0)
-        ? dto.budgetTierPricing
-        : (dto.budget?.tierPricing?.map(t => ({ tier: t.tier, rate: t.amount })) || []),
-      budgetTotal: (dto.budgetTotal ?? dto.budget?.total)?.toString(),
-      platformFeePercent: (dto.platformFeePercent ?? dto.budget?.platformFeePercent)?.toString() || '10',
-      location: dto.location || dto.productLocation,
-      niches: dto.niches || [],
-      creatorSizes: (dto.creatorSizes && dto.creatorSizes.length > 0) ? dto.creatorSizes : (dto.budget?.creatorSizes || []),
-      brief: dto.brief || dto.requirements?.brandGuidelines,
+      name,
+      type,
+      visibility,
+      objective,
+      budgetMode,
+      budgetTierPricing,
+      budgetTotal,
+      platformFeePercent,
+      location,
+      niches,
+      creatorSizes,
+      brief,
       dos: dto.dos || [],
       donts: dto.donts || [],
-      referenceUrls: (dto.referenceUrls && dto.referenceUrls.length > 0) ? dto.referenceUrls : (dto.requirements?.references ? dto.requirements.references.split('\n').filter(Boolean) : []),
-      hashtags: dto.hashtags || [],
-      deliverables: (dto.deliverables && dto.deliverables.length > 0) ? dto.deliverables : (dto.requirements?.contentTypes?.map(c => ({ type: c, count: 1 })) || []),
-      proofOfWorkReq: dto.proofOfWorkReq || false,
-      deadline: dto.deadline ? new Date(dto.deadline) : (dto.timeline?.applicationDeadline ? new Date(dto.timeline.applicationDeadline) : undefined),
-      status: dto.status || 'draft',
+      referenceUrls,
+      hashtags,
+      deliverables: deliverablesArray,
+      proofOfWorkReq,
+      deadline: applicationDeadline,
+      applicationDeadline,
+      workDeadline,
+      scriptDeadline,
+      thumbnailUrl,
+      platform,
+      contentTypes,
+      postingType,
+      usageRights,
+      scriptType,
+      scriptFlow,
+      scriptFileKey,
+      creatorStrategy,
+      mixMode,
+      selectedTier,
+      productDetails,
+      status,
     })
     .returning();
 

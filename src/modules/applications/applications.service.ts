@@ -91,6 +91,8 @@ export async function applyToCampaign(
       name: campaigns.name,
       visibility: campaigns.visibility,
       status: campaigns.status,
+      applicationDeadline: campaigns.applicationDeadline,
+      workDeadline: campaigns.workDeadline,
       budgetTierPricing: campaigns.budgetTierPricing,
       brandUserId: brandProfiles.userId,
     })
@@ -102,6 +104,14 @@ export async function applyToCampaign(
   if (!campaignData) throw new NotFoundError('Campaign');
   if (campaignData.visibility !== 'public') throw new ForbiddenError('This campaign is not open for applications');
   if (campaignData.status !== 'active') throw new BadRequestError('Campaign is not currently accepting applications');
+
+  const now = new Date();
+  if (campaignData.applicationDeadline && campaignData.applicationDeadline < now) {
+    throw new BadRequestError('Application deadline has passed');
+  }
+  if (campaignData.workDeadline && campaignData.workDeadline < now) {
+    throw new BadRequestError('Work deadline has passed');
+  }
 
   // Check for duplicate
   const [existing] = await db

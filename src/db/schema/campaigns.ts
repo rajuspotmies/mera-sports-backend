@@ -77,10 +77,10 @@ export const campaigns = pgTable('campaigns', {
   usageRights: varchar('usage_rights', { length: 50 }), // e.g. 30d, 90d
   scriptType: varchar('script_type', { length: 50 }), // creator | brand
   scriptFlow: text('script_flow'),
-  scriptFileKey: varchar('script_file_key', { length: 500 }),
+  scriptFileKey: text('script_file_key'),
 
   // Media
-  thumbnailUrl: varchar('thumbnail_url', { length: 500 }),
+  thumbnailUrl: text('thumbnail_url'),
 
   // Lifecycle
   // Legacy single deadline; still populated from applicationDeadline when present.

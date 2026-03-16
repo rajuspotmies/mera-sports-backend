@@ -81,6 +81,7 @@ export const messageSenderRoleEnum = pgEnum('message_sender_role', [
 
 export const notificationTypeEnum = pgEnum('notification_type', [
   'application',
+  'campaign_invite',
   'script',
   'submission',
   'negotiation',

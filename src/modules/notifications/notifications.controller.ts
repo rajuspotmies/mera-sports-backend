@@ -29,3 +29,10 @@ export async function registerTokenHandler(req: Request, res: Response): Promise
   await notificationsService.registerFcmToken(req.user.sub, token, deviceType);
   sendSuccess(res, { message: 'FCM token registered successfully' });
 }
+
+export async function sendTestNotificationHandler(req: Request, res: Response): Promise<void> {
+  const targetUserId =
+    req.body?.userId && req.user.role === 'admin' ? req.body.userId : req.user.sub;
+  const result = await notificationsService.sendTestNotification(targetUserId);
+  sendSuccess(res, result);
+}

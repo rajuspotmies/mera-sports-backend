@@ -98,22 +98,39 @@ export async function discoverCampaigns(query: ListCampaignsQuery) {
 // ─── Get single campaign ──────────────────────────────────────────────────────
 
 export async function getCampaignById(id: string, requester: JWTPayload) {
-  const [campaign] = await db
-    .select()
-    .from(campaigns)
-    .where(eq(campaigns.id, id))
-    .limit(1);
+  const [campaign] = await db.select().from(campaigns).where(eq(campaigns.id, id)).limit(1);
 
   if (!campaign) throw new NotFoundError('Campaign');
 
   // Private campaigns: only brand owner, admin can view
   if (campaign.visibility === 'private') {
+    // Admin: full access
     if (requester.role === 'admin') return campaign;
-    if (requester.role === 'brand_owner' && campaign.brandId === requester.brandId) return campaign;
+
+    // Brand owner: must own the campaign
+    if (requester.role === 'brand_owner' && campaign.brandId === requester.brandId) {
+      return campaign;
+    }
+
+    // Influencer: can view if they have a CI row (invited/applied/etc.) for this campaign
+    if (requester.role === 'influencer' && requester.influencerId) {
+      const [ci] = await db
+        .select({ id: campaignInfluencers.id })
+        .from(campaignInfluencers)
+        .where(
+          and(
+            eq(campaignInfluencers.campaignId, campaign.id),
+            eq(campaignInfluencers.influencerId, requester.influencerId)
+          )
+        )
+        .limit(1);
+
+      if (ci) return campaign;
+    }
+
     throw new ForbiddenError('This campaign is private');
   }
 
-  // TODO: extend to return normalized basics/deliverables/budget/meta + derived flags
   return campaign;
 }
 

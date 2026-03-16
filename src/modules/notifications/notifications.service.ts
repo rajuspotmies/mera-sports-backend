@@ -6,6 +6,7 @@ import { parsePagination, buildPaginationMeta, getOffset } from '@/shared/utils/
 import { emitToUser } from '@/socket';
 import { notificationQueue, emailQueue } from '@/jobs/queue';
 import { fcmTokens } from '@/db/schema';
+import { sendPushNotification } from '@/shared/services/fcm.service';
 
 /** Parse conversationId from chat actionUrl (e.g. /messages?id=xxx or mutinytalent://chat?conversationId=xxx). */
 export function parseConversationIdFromActionUrl(
@@ -75,11 +76,19 @@ export async function listNotifications(
     .from(notifications)
     .where(and(eq(notifications.userId, userId), eq(notifications.isRead, false)));
 
-  // Add conversationId for chat type (for mobile deep link and foreground suppression)
+  // Add conversationId for chat; for campaign_invite add accept/decline action URLs for in-app and push action buttons
   const notificationsWithConversationId = rows.map((row) => {
     const conversationId =
       row.type === 'chat' ? parseConversationIdFromActionUrl(row.actionUrl, row.type) : undefined;
-    return { ...row, conversationId };
+    const base = { ...row, conversationId };
+    if (row.type === 'campaign_invite' && row.campaignId) {
+      return {
+        ...base,
+        acceptInviteUrl: `/campaigns/${row.campaignId}/applications/accept-invite`,
+        declineInviteUrl: `/campaigns/${row.campaignId}/applications/decline-invite`,
+      };
+    }
+    return base;
   });
 
   return {
@@ -136,4 +145,28 @@ export async function getTokensForUser(userId: string) {
     .from(fcmTokens)
     .where(eq(fcmTokens.userId, userId));
   return tokens.map((t) => t.token);
+}
+
+/** Send a one-off test push notification to all FCM tokens registered for the user. Invalid tokens are removed from the DB. */
+export async function sendTestNotification(userId: string) {
+  const tokens = await getTokensForUser(userId);
+  if (tokens.length === 0) {
+    return { sent: 0, failed: 0, invalidTokensRemoved: 0, message: 'No FCM tokens registered for this user' };
+  }
+  const result = await sendPushNotification(
+    tokens,
+    'Test notification',
+    'This is a test push from Mutiny. If you see this, FCM is working.',
+    { type: 'system', actionUrl: '/notifications' }
+  );
+  const invalidTokens = result?.invalidTokens ?? [];
+  for (const token of invalidTokens) {
+    await unregisterFcmToken(token);
+  }
+  return {
+    sent: result?.successCount ?? 0,
+    failed: result?.failureCount ?? 0,
+    invalidTokensRemoved: invalidTokens.length,
+    message: `Test push sent to ${result?.successCount ?? 0} device(s).${invalidTokens.length ? ` ${invalidTokens.length} invalid token(s) removed.` : ''}`,
+  };
 }

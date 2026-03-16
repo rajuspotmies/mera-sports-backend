@@ -20,6 +20,7 @@ import type {
 } from './influencers.schema';
 import type { JWTPayload } from '@/shared/types/api';
 import { parsePagination, buildPaginationMeta, getOffset } from '@/shared/utils/pagination';
+import { createNotification } from '../notifications/notifications.service';
 
 // ─── Own profile (influencer updates their own) ─────────────────────────────
 
@@ -208,16 +209,16 @@ export async function inviteInfluencer(brandUser: JWTPayload, dto: InviteInfluen
 
   // Verify campaign belongs to this brand
   const [campaign] = await db
-    .select({ id: campaigns.id, budgetTierPricing: campaigns.budgetTierPricing })
+    .select({ id: campaigns.id, name: campaigns.name, budgetTierPricing: campaigns.budgetTierPricing })
     .from(campaigns)
     .where(and(eq(campaigns.id, dto.campaignId), eq(campaigns.brandId, brandUser.brandId)))
     .limit(1);
 
   if (!campaign) throw new NotFoundError('Campaign');
 
-  // Get influencer profile to determine tier_rate
+  // Get influencer profile to determine tier_rate and userId (for notification)
   const [influencer] = await db
-    .select({ id: influencerProfiles.id, tier: influencerProfiles.tier })
+    .select({ id: influencerProfiles.id, tier: influencerProfiles.tier, userId: influencerProfiles.userId })
     .from(influencerProfiles)
     .where(eq(influencerProfiles.id, dto.influencerId))
     .limit(1);
@@ -260,6 +261,17 @@ export async function inviteInfluencer(brandUser: JWTPayload, dto: InviteInfluen
     .update(campaigns)
     .set({ creatorsInvited: sql`${campaigns.creatorsInvited} + 1`, updatedAt: new Date() })
     .where(eq(campaigns.id, dto.campaignId));
+
+  // Notify influencer so they see the invite in notifications and can accept/decline (type campaign_invite for action buttons)
+  await createNotification({
+    userId: influencer.userId,
+    type: 'campaign_invite',
+    title: 'Campaign Invite',
+    message: `You've been invited to the campaign "${campaign.name}". Accept or decline below.`,
+    campaignId: dto.campaignId,
+    campaignName: campaign.name,
+    actionUrl: `/campaigns/${dto.campaignId}`,
+  });
 
   return ci;
 }

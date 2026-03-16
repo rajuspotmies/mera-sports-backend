@@ -8,8 +8,17 @@ import {
 } from '@/modules/notifications/notifications.service';
 import { sendPushNotification } from '@/shared/services/fcm.service';
 
-/** Job data when enqueued from createNotification(): full notification row (id, userId, type, title, message, actionUrl, ...). */
-function isFullNotification(data: unknown): data is { userId: string; title: string; message: string; type: string; actionUrl?: string | null } {
+/** Job data when enqueued from createNotification(): full notification row (id, userId, type, title, message, actionUrl, campaignId, ...). */
+function isFullNotification(
+  data: unknown
+): data is {
+  userId: string;
+  title: string;
+  message: string;
+  type: string;
+  actionUrl?: string | null;
+  campaignId?: string | null;
+} {
   return (
     typeof data === 'object' &&
     data !== null &&
@@ -70,6 +79,10 @@ export async function processNotificationJob(job: Job) {
         if (data.type === 'chat' && data.actionUrl) {
           const conversationId = parseConversationIdFromActionUrl(data.actionUrl, data.type);
           if (conversationId) fcmData.conversationId = conversationId;
+        }
+        // campaign_invite: include campaignId so app can show Accept/Decline action buttons
+        if (data.type === 'campaign_invite' && data.campaignId) {
+          fcmData.campaignId = data.campaignId;
         }
         const result = await sendPushNotification(tokens, data.title, data.message, fcmData);
         if (result?.invalidTokens.length) {

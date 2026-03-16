@@ -7,6 +7,20 @@ import { emitToUser } from '@/socket';
 import { notificationQueue, emailQueue } from '@/jobs/queue';
 import { fcmTokens } from '@/db/schema';
 
+/** Parse conversationId from chat actionUrl (e.g. /messages?id=xxx or mutinytalent://chat?conversationId=xxx). */
+export function parseConversationIdFromActionUrl(
+  actionUrl: string | null | undefined,
+  type: string
+): string | undefined {
+  if (type !== 'chat' || !actionUrl) return undefined;
+  try {
+    const url = new URL(actionUrl.startsWith('http') ? actionUrl : actionUrl, 'https://dummy.com');
+    return url.searchParams.get('id') || url.searchParams.get('conversationId') || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 // ─── Create & emit ────────────────────────────────────────────────────────────
 
 export async function createNotification(data: Omit<NewNotification, 'id' | 'createdAt'>) {
@@ -61,8 +75,15 @@ export async function listNotifications(
     .from(notifications)
     .where(and(eq(notifications.userId, userId), eq(notifications.isRead, false)));
 
+  // Add conversationId for chat type (for mobile deep link and foreground suppression)
+  const notificationsWithConversationId = rows.map((row) => {
+    const conversationId =
+      row.type === 'chat' ? parseConversationIdFromActionUrl(row.actionUrl, row.type) : undefined;
+    return { ...row, conversationId };
+  });
+
   return {
-    notifications: rows,
+    notifications: notificationsWithConversationId,
     meta: buildPaginationMeta(count, { page, limit }),
     unreadCount,
   };

@@ -39,6 +39,11 @@ function clearAuthCookies(res: Response, role: Role) {
   res.clearCookie(names.refresh, { ...baseCookieOptions });
 }
 
+/** True when client sends X-Client: mobile (e.g. React Native). Enables returning tokens in body for SecureStore. */
+function isMobileClient(req: Request): boolean {
+  return req.get('X-Client') === 'mobile';
+}
+
 // ─── Handlers (factories accept role, return Express handler) ────────────────
 
 export const registerHandler = (role: Role) => {
@@ -69,7 +74,11 @@ export const loginHandler = (role: Role) => {
       }
 
       setAuthCookies(res, role, accessToken, refreshToken);
-      sendSuccess(res, { user });
+      if (isMobileClient(req)) {
+        sendSuccess(res, { user, accessToken, refreshToken });
+      } else {
+        sendSuccess(res, { user });
+      }
     } catch (error) {
       next(error);
     }
@@ -80,14 +89,21 @@ export const refreshHandler = (role: Role) => {
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const names = cookieNames(role);
-      const rawRefresh = (req.cookies as Record<string, string>)?.[names.refresh];
+      // Mobile clients send refreshToken in body when X-Client: mobile; web uses cookie
+      const rawRefresh =
+        (req.body as { refreshToken?: string })?.refreshToken ??
+        (req.cookies as Record<string, string>)?.[names.refresh];
       if (!rawRefresh) {
         res.status(401).json({ success: false, error: { code: 'UNAUTHORIZED', message: 'Missing refresh token' } });
         return;
       }
       const { accessToken, refreshToken: newRefreshToken, user } = await authService.refresh(rawRefresh);
       setAuthCookies(res, role, accessToken, newRefreshToken);
-      sendSuccess(res, { user });
+      if (isMobileClient(req)) {
+        sendSuccess(res, { user, accessToken, refreshToken: newRefreshToken });
+      } else {
+        sendSuccess(res, { user });
+      }
     } catch (error) {
       next(error);
     }
@@ -98,7 +114,9 @@ export const logoutHandler = (role: Role) => {
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const names = cookieNames(role);
-      const rawRefresh = (req.cookies as Record<string, string>)?.[names.refresh];
+      const rawRefresh =
+        (req.body as { refreshToken?: string })?.refreshToken ??
+        (req.cookies as Record<string, string>)?.[names.refresh];
       if (rawRefresh) {
         await authService.logout(rawRefresh);
       }
@@ -165,7 +183,11 @@ export const verifyOtpHandler = (role: Role) => {
       }
 
       setAuthCookies(res, role, accessToken, refreshToken);
-      sendSuccess(res, { user });
+      if (isMobileClient(req)) {
+        sendSuccess(res, { user, accessToken, refreshToken });
+      } else {
+        sendSuccess(res, { user });
+      }
     } catch (error) {
       next(error);
     }

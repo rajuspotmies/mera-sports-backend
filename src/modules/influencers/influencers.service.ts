@@ -6,6 +6,7 @@ import {
   campaigns,
   campaignInfluencers,
   brandProfiles,
+  influencerPortfolios,
 } from '@/db/schema';
 import { NotFoundError, ConflictError, BadRequestError, ForbiddenError } from '@/shared/errors';
 import type { InfluencerProfile } from '@/db/schema';
@@ -14,6 +15,8 @@ import type {
   SearchInfluencersQuery,
   InviteInfluencerDTO,
   BulkInviteDTO,
+  AddPortfolioItemDTO,
+  UpdatePortfolioItemDTO,
 } from './influencers.schema';
 import type { JWTPayload } from '@/shared/types/api';
 import { parsePagination, buildPaginationMeta, getOffset } from '@/shared/utils/pagination';
@@ -48,7 +51,14 @@ export async function getOwnInfluencerProfile(userId: string) {
     .limit(1);
 
   if (!profile) throw new NotFoundError('Influencer profile');
-  return profile;
+
+  const portfolio = await db
+    .select()
+    .from(influencerPortfolios)
+    .where(eq(influencerPortfolios.influencerId, profile.id))
+    .orderBy(sql`${influencerPortfolios.createdAt} DESC`);
+
+  return { ...profile, portfolio };
 }
 
 export async function updateOwnInfluencerProfile(
@@ -181,7 +191,14 @@ export async function getInfluencerById(id: string) {
     .limit(1);
 
   if (!profile) throw new NotFoundError('Influencer');
-  return profile;
+
+  const portfolio = await db
+    .select()
+    .from(influencerPortfolios)
+    .where(eq(influencerPortfolios.influencerId, profile.id))
+    .orderBy(sql`${influencerPortfolios.createdAt} DESC`);
+
+  return { ...profile, portfolio };
 }
 
 // ─── Invite ──────────────────────────────────────────────────────────────────
@@ -261,4 +278,63 @@ export async function bulkInviteInfluencers(brandUser: JWTPayload, dto: BulkInvi
   const succeeded = results.filter((r) => r.status === 'fulfilled').length;
   const failed = results.filter((r) => r.status === 'rejected').length;
   return { succeeded, failed, total: dto.influencerIds.length };
+}
+
+// ─── Portfolio ───────────────────────────────────────────────────────────────
+
+export async function addPortfolioItem(userId: string, dto: AddPortfolioItemDTO) {
+  const [profile] = await db
+    .select({ id: influencerProfiles.id })
+    .from(influencerProfiles)
+    .where(eq(influencerProfiles.userId, userId))
+    .limit(1);
+
+  if (!profile) throw new NotFoundError('Influencer profile');
+
+  const [item] = await db
+    .insert(influencerPortfolios)
+    .values({
+      influencerId: profile.id,
+      ...dto,
+    })
+    .returning();
+
+  return item;
+}
+
+export async function updatePortfolioItem(userId: string, itemId: string, dto: UpdatePortfolioItemDTO) {
+  const [profile] = await db
+    .select({ id: influencerProfiles.id })
+    .from(influencerProfiles)
+    .where(eq(influencerProfiles.userId, userId))
+    .limit(1);
+
+  if (!profile) throw new NotFoundError('Influencer profile');
+
+  const [updated] = await db
+    .update(influencerPortfolios)
+    .set({ ...dto, updatedAt: new Date() })
+    .where(and(eq(influencerPortfolios.id, itemId), eq(influencerPortfolios.influencerId, profile.id)))
+    .returning();
+
+  if (!updated) throw new NotFoundError('Portfolio item');
+  return updated;
+}
+
+export async function deletePortfolioItem(userId: string, itemId: string) {
+  const [profile] = await db
+    .select({ id: influencerProfiles.id })
+    .from(influencerProfiles)
+    .where(eq(influencerProfiles.userId, userId))
+    .limit(1);
+
+  if (!profile) throw new NotFoundError('Influencer profile');
+
+  const [deleted] = await db
+    .delete(influencerPortfolios)
+    .where(and(eq(influencerPortfolios.id, itemId), eq(influencerPortfolios.influencerId, profile.id)))
+    .returning();
+
+  if (!deleted) throw new NotFoundError('Portfolio item');
+  return { success: true };
 }

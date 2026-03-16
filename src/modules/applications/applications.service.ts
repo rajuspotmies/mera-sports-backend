@@ -122,16 +122,23 @@ export async function applyToCampaign(
     throw new ConflictError('You have already applied to this campaign');
   }
 
-  // Resolve tier_rate from campaign pricing
-  const [influencer] = await db
-    .select({ tier: influencerProfiles.tier })
-    .from(influencerProfiles)
-    .where(eq(influencerProfiles.id, influencerUser.influencerId))
-    .limit(1);
+  // Resolve tier_rate: for public single-tier with quote, use provided amount; else from campaign pricing
+  const tierPricing = (campaignData.budgetTierPricing || []) as Array<{ tier: string; rate: number }>;
+  const isSingleTier = tierPricing.length === 1;
+  const quotedAmount = dto.amount ?? dto.proposedBudget;
 
-  const tierPricing = campaignData.budgetTierPricing as Array<{ tier: string; rate: number }>;
-  const tierEntry = tierPricing.find((t) => t.tier === influencer?.tier);
-  const tierRate = tierEntry ? tierEntry.rate.toString() : null;
+  let tierRate: string | null;
+  if (isSingleTier && quotedAmount != null && quotedAmount > 0) {
+    tierRate = quotedAmount.toString();
+  } else {
+    const [influencer] = await db
+      .select({ tier: influencerProfiles.tier })
+      .from(influencerProfiles)
+      .where(eq(influencerProfiles.id, influencerUser.influencerId))
+      .limit(1);
+    const tierEntry = tierPricing.find((t) => t.tier === influencer?.tier);
+    tierRate = tierEntry ? tierEntry.rate.toString() : null;
+  }
 
   const [ci] = await db
     .insert(campaignInfluencers)

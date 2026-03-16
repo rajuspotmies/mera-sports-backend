@@ -18,3 +18,4 @@ export * from './analytics_snapshots';
 export * from './refresh_tokens';
 export * from './fcm_tokens';
 export * from './otp_codes';
+export * from './influencer_portfolios';

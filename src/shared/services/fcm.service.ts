@@ -1,19 +1,25 @@
 import * as admin from 'firebase-admin';
 import { logger } from '../utils/logger';
 
-// We initialize the app only once
 let appInitialized = false;
 
+/**
+ * Initialize Firebase Admin SDK for FCM using only environment variables:
+ * - FIREBASE_PROJECT_ID
+ * - FIREBASE_CLIENT_EMAIL
+ * - FIREBASE_PRIVATE_KEY (use \n for newlines in .env, e.g. "-----BEGIN PRIVATE KEY-----\nMIIE...\n-----END PRIVATE KEY-----\n")
+ */
 export function initializeFcm() {
   if (appInitialized) return;
 
   const projectId = process.env.FIREBASE_PROJECT_ID;
   const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-  // Handle newlines in private key from .env
   const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n');
 
   if (!projectId || !clientEmail || !privateKey) {
-    logger.warn('FCM credentials missing from environment variables. Push notifications will be disabled.');
+    logger.warn(
+      'FCM disabled: set FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, and FIREBASE_PRIVATE_KEY in .env (use \\n for newlines in private key).'
+    );
     return;
   }
 
@@ -26,50 +32,72 @@ export function initializeFcm() {
       }),
     });
     appInitialized = true;
-    logger.info('Firebase Admin SDK initialized successfully.');
+    logger.info('Firebase Admin SDK (FCM) initialized from environment variables.');
   } catch (error) {
     logger.error('Failed to initialize Firebase Admin SDK:', error);
   }
 }
 
+export function isFcmInitialized(): boolean {
+  return appInitialized;
+}
+
+export interface SendPushResult {
+  successCount: number;
+  failureCount: number;
+  invalidTokens: string[];
+}
+
 /**
- * Send a push notification to specific device tokens
+ * Send a push notification to specific device tokens.
+ * Returns invalid tokens so callers can remove them from the DB.
  */
-export async function sendPushNotification(tokens: string[], title: string, body: string, data?: Record<string, string>) {
+export async function sendPushNotification(
+  tokens: string[],
+  title: string,
+  body: string,
+  data?: Record<string, string>
+): Promise<SendPushResult | undefined> {
   if (!appInitialized) {
-    logger.warn('Attempted to send push notification but FCM is not initialized.');
-    return;
+    logger.warn('FCM not initialized; push notification skipped.');
+    return undefined;
   }
 
-  if (tokens.length === 0) return;
+  if (tokens.length === 0) return { successCount: 0, failureCount: 0, invalidTokens: [] };
 
   const message: admin.messaging.MulticastMessage = {
     tokens,
-    notification: {
-      title,
-      body,
-    },
-    data,
+    notification: { title, body },
+    data: data ? Object.fromEntries(Object.entries(data).map(([k, v]) => [k, String(v)])) : undefined,
   };
 
   try {
     const response = await admin.messaging().sendEachForMulticast(message);
-    logger.info(`FCM: Successfully sent ${response.successCount} messages; ${response.failureCount} failed.`);
-    
-    // Potential follow-up: Identify and remove invalid tokens
+    const invalidTokens: string[] = [];
+
     if (response.failureCount > 0) {
       response.responses.forEach((resp, idx) => {
         if (!resp.success) {
-          const errorCode = resp.error?.code;
-          if (errorCode === 'messaging/invalid-registration-token' || errorCode === 'messaging/registration-token-not-registered') {
-             // TODO: Remove stale token from DB
-             logger.debug(`Stale token found at index ${idx}: ${tokens[idx]}`);
+          const code = resp.error?.code;
+          if (
+            code === 'messaging/invalid-registration-token' ||
+            code === 'messaging/registration-token-not-registered'
+          ) {
+            invalidTokens.push(tokens[idx]);
+            logger.debug('Stale FCM token marked for removal:', tokens[idx].slice(0, 20) + '…');
           }
         }
       });
     }
-    
-    return response;
+
+    logger.info(
+      `FCM: sent ${response.successCount} messages; ${response.failureCount} failed; ${invalidTokens.length} invalid token(s).`
+    );
+    return {
+      successCount: response.successCount,
+      failureCount: response.failureCount,
+      invalidTokens,
+    };
   } catch (error) {
     logger.error('Error sending FCM messages:', error);
     throw error;

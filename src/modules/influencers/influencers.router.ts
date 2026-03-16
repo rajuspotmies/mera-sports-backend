@@ -10,10 +10,14 @@ import {
   searchInfluencersSchema,
   inviteInfluencerSchema,
   bulkInviteSchema,
+  addPortfolioItemSchema,
+  updatePortfolioItemSchema,
 } from './influencers.schema';
 import * as ctrl from './influencers.controller';
 import * as authCtrl from '../auth/auth.controller';
 import { updateMeSchema, sendOtpSchema, verifyOtpSchema } from '../auth/auth.schema';
+import { getMyApplicationsHandler } from '../applications/applications.controller';
+import { listApplicationsQuerySchema } from '../applications/applications.schema';
 
 const router = Router();
 
@@ -50,6 +54,35 @@ router.post(
   setUploadFolder('avatars'),
   upload.single('file'),
   asyncHandler(ctrl.uploadAvatarHandler)
+);
+
+// ─── Portfolio ───────────────────────────────────────────────────────────────
+router.post(
+  '/portfolio',
+  authenticate('influencer'),
+  validate({ body: addPortfolioItemSchema }),
+  asyncHandler(ctrl.addPortfolioItemHandler)
+);
+
+router.patch(
+  '/portfolio/:itemId',
+  authenticate('influencer'),
+  validate({ body: updatePortfolioItemSchema }),
+  asyncHandler(ctrl.updatePortfolioItemHandler)
+);
+
+router.delete(
+  '/portfolio/:itemId',
+  authenticate('influencer'),
+  asyncHandler(ctrl.deletePortfolioItemHandler)
+);
+
+// ─── My applications (campaigns invited to or applied to) ───────────────────────
+router.get(
+  '/applications',
+  authenticate('influencer'),
+  validate({ query: listApplicationsQuerySchema }),
+  asyncHandler(getMyApplicationsHandler)
 );
 
 // ─── Discover (used by brands + admin) ───────────────────────────────────────

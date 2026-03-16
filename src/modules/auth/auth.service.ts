@@ -429,15 +429,19 @@ export async function softDeleteUser(userId: string) {
 // ─── OTP Service ─────────────────────────────────────────────────────────────
 
 export async function sendOtp(dto: SendOtpDTO) {
+  // Use the phone number from the request payload only (no default/hardcode)
+  const phoneNumber = dto.phoneNumber;
+  logger.info(`[OTP] Request received for phone: ${phoneNumber}`);
+
   // Generate random 6-digit OTP
   const code = Math.floor(100000 + Math.random() * 900000).toString();
   const expiresAt = new Date();
   expiresAt.setMinutes(expiresAt.getMinutes() + 10); // 10 min expiry
 
-  // Upsert OTP
+  // Upsert OTP (stored under the same number as received)
   await db.insert(otpCodes)
     .values({
-      phoneNumber: dto.phoneNumber,
+      phoneNumber,
       code,
       expiresAt,
     })
@@ -446,16 +450,16 @@ export async function sendOtp(dto: SendOtpDTO) {
       set: { code, expiresAt, createdAt: new Date() },
     });
 
-  // Call WhatsApp service
+  // Call WhatsApp service with the same number from the request
   try {
-    await sendWhatsAppOTP(dto.phoneNumber, code);
+    await sendWhatsAppOTP(phoneNumber, code);
   } catch (error) {
-    logger.error(`Failed to send OTP to ${dto.phoneNumber} via WhatsApp`, error);
+    logger.error(`Failed to send OTP to ${phoneNumber} via WhatsApp`, error);
     // Continue even if WhatsApp fails in dev if needed, or throw error
     // For now, let's keep it to throw if it fails once we're in "real scenario"
   }
 
-  logger.info(`[DEVDOTP] OTP for ${dto.phoneNumber}: ${code}`);
+  logger.info(`[DEVDOTP] OTP for ${phoneNumber}: ${code}`);
 
   return { success: true, message: 'OTP sent successfully' };
 }

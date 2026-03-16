@@ -206,6 +206,42 @@ async function seed() {
 
   logger.info(`Created campaign: ${campaign1.name}`);
 
+  // ─── OTP test influencer (so app login with OTP sees campaigns) ─────────────
+  const testOtpPhone = process.env.TEST_OTP_PHONE || '7032952586';
+  const testOtpPhoneNormalized = testOtpPhone.startsWith('+') ? testOtpPhone : `+91${testOtpPhone}`;
+  const [otpUser] = await db
+    .insert(users)
+    .values({
+      phoneNumber: testOtpPhoneNormalized,
+      email: `${testOtpPhone}@otp-test.mutiny.com`,
+      passwordHash: '',
+      name: 'OTP Test Creator',
+      role: 'influencer',
+      isVerified: true,
+    })
+    .returning();
+
+  const [otpProfile] = await db
+    .insert(influencerProfiles)
+    .values({
+      userId: otpUser.id,
+      handle: '@otptest',
+      bio: 'Test account for OTP login — see campaigns in app.',
+      tier: 'micro',
+      followerCount: 25000,
+      isVerified: false,
+    })
+    .returning();
+
+  await db.insert(campaignInfluencers).values({
+    campaignId: campaign1.id,
+    influencerId: otpProfile.id,
+    origin: 'brand_invite',
+    status: 'invited',
+    tierRate: '8000',
+  });
+  logger.info(`Created OTP test influencer: ${testOtpPhoneNormalized} with 1 campaign (invited). Sign in with OTP using ${testOtpPhone} to see it.`);
+
   // ─── Application States ───────────────────────────────────────────────────
   
   // 1. Priya: Applied (New Application)
@@ -332,6 +368,7 @@ async function seed() {
   logger.info('  rohan@demo.com     / password123  (influencer, mid)   - Negotiating');
   logger.info('  test1@demo.com     / password123  (influencer, nano)  - Script Review');
   logger.info('  test2@demo.com     / password123  (influencer, micro) - Work Review');
+  logger.info(`  OTP ${testOtpPhoneNormalized} (no password)  (influencer) - 1 invited campaign — use in app to see campaigns`);
 
   process.exit(0);
 }

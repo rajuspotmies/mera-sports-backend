@@ -10,7 +10,8 @@ const tierConfigSchema = z.object({
 
 const basicsSchema = z.object({
   campaignName: z.string().min(1).max(255),
-  coverImageUrl: z.string().max(500),
+  // Do not restrict coverImageUrl length; it can be a full URL or uploads key
+  coverImageUrl: z.string(),
   type: z.enum(['influencer', 'ugc', 'meme', 'twitter']),
   niche: z.string().min(1),
   visibility: z.enum(['public', 'private']).default('public'),
@@ -40,7 +41,8 @@ const budgetSchema = z.object({
   mixMode: z.boolean(),
   selectedTier: tierEnum.optional(),
   creatorSizes: z.array(tierEnum).optional(),
-  tierConfig: z.array(tierConfigSchema).min(1),
+  // Allow empty tierConfig (min length 0) so frontend can submit without amounts initially
+  tierConfig: z.array(tierConfigSchema).min(0),
   platformFeePercent: z.coerce.number().min(0).max(100),
   productDetails: z.string().optional(),
   applicationDeadline: z.string(),

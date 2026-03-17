@@ -7,6 +7,7 @@ const router = Router();
 
 router.use(authenticate());
 
+router.post('/start', asyncHandler(ctrl.startConversationHandler));
 router.get('/', asyncHandler(ctrl.listConversationsHandler));
 router.get('/:id', asyncHandler(ctrl.getConversationHandler));
 router.post('/:id', asyncHandler(ctrl.sendMessageHandler));

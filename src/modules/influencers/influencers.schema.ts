@@ -33,13 +33,7 @@ export const searchInfluencersSchema = z.object({
   limit: z.coerce.number().default(20),
 });
 
-export const inviteInfluencerSchema = z.object({
-  influencerId: z.string().uuid(),
-  campaignId: z.string().uuid(),
-  message: z.string().max(500).optional(),
-});
-
-export const bulkInviteSchema = z.object({
+export const inviteInfluencersSchema = z.object({
   influencerIds: z.array(z.string().uuid()).min(1).max(50),
   campaignId: z.string().uuid(),
   message: z.string().max(500).optional(),
@@ -57,7 +51,6 @@ export const updatePortfolioItemSchema = addPortfolioItemSchema.partial();
 
 export type UpdateInfluencerProfileDTO = z.infer<typeof updateInfluencerProfileSchema>;
 export type SearchInfluencersQuery = z.infer<typeof searchInfluencersSchema>;
-export type InviteInfluencerDTO = z.infer<typeof inviteInfluencerSchema>;
-export type BulkInviteDTO = z.infer<typeof bulkInviteSchema>;
+export type InviteInfluencersDTO = z.infer<typeof inviteInfluencersSchema>;
 export type AddPortfolioItemDTO = z.infer<typeof addPortfolioItemSchema>;
 export type UpdatePortfolioItemDTO = z.infer<typeof updatePortfolioItemSchema>;

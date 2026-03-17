@@ -30,14 +30,9 @@ export async function getInfluencerByIdHandler(req: Request, res: Response): Pro
   sendSuccess(res, result);
 }
 
-export async function inviteInfluencerHandler(req: Request, res: Response): Promise<void> {
-  const result = await influencersService.inviteInfluencer(req.user, req.body);
+export async function inviteInfluencersHandler(req: Request, res: Response): Promise<void> {
+  const result = await influencersService.inviteInfluencers(req.user, req.body);
   sendSuccess(res, result, 201);
-}
-
-export async function bulkInviteHandler(req: Request, res: Response): Promise<void> {
-  const result = await influencersService.bulkInviteInfluencers(req.user, req.body);
-  sendSuccess(res, result);
 }
 
 // ─── Portfolio ───────────────────────────────────────────────────────────────

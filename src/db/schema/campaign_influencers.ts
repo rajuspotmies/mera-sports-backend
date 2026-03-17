@@ -41,6 +41,7 @@ export const campaignInfluencers = pgTable(
     connectedAt: timestamp('connected_at', { withTimezone: true }).defaultNow(),
     paidAt: timestamp('paid_at', { withTimezone: true }),
     completedAt: timestamp('completed_at', { withTimezone: true }),
+    settledAt: timestamp('settled_at', { withTimezone: true }),
 
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),

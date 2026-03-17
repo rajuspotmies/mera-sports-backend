@@ -98,22 +98,39 @@ export async function discoverCampaigns(query: ListCampaignsQuery) {
 // ─── Get single campaign ──────────────────────────────────────────────────────
 
 export async function getCampaignById(id: string, requester: JWTPayload) {
-  const [campaign] = await db
-    .select()
-    .from(campaigns)
-    .where(eq(campaigns.id, id))
-    .limit(1);
+  const [campaign] = await db.select().from(campaigns).where(eq(campaigns.id, id)).limit(1);
 
   if (!campaign) throw new NotFoundError('Campaign');
 
   // Private campaigns: only brand owner, admin can view
   if (campaign.visibility === 'private') {
+    // Admin: full access
     if (requester.role === 'admin') return campaign;
-    if (requester.role === 'brand_owner' && campaign.brandId === requester.brandId) return campaign;
+
+    // Brand owner: must own the campaign
+    if (requester.role === 'brand_owner' && campaign.brandId === requester.brandId) {
+      return campaign;
+    }
+
+    // Influencer: can view if they have a CI row (invited/applied/etc.) for this campaign
+    if (requester.role === 'influencer' && requester.influencerId) {
+      const [ci] = await db
+        .select({ id: campaignInfluencers.id })
+        .from(campaignInfluencers)
+        .where(
+          and(
+            eq(campaignInfluencers.campaignId, campaign.id),
+            eq(campaignInfluencers.influencerId, requester.influencerId)
+          )
+        )
+        .limit(1);
+
+      if (ci) return campaign;
+    }
+
     throw new ForbiddenError('This campaign is private');
   }
 
-  // TODO: extend to return normalized basics/deliverables/budget/meta + derived flags
   return campaign;
 }
 
@@ -235,9 +252,6 @@ export async function createCampaign(brandUser: JWTPayload, dto: CreateCampaignD
   const scriptFileKey =
     deliverables?.scriptFileName ?? undefined;
 
-  const creatorStrategy =
-    budget?.creatorStrategy ?? dto.budget?.strategy;
-
   const mixMode =
     budget?.mixMode ?? dto.budget?.mixMode;
 
@@ -284,7 +298,6 @@ export async function createCampaign(brandUser: JWTPayload, dto: CreateCampaignD
       scriptType,
       scriptFlow,
       scriptFileKey,
-      creatorStrategy,
       mixMode,
       selectedTier,
       productDetails,
@@ -309,6 +322,126 @@ export async function updateCampaign(
   }
 
   const mappedUpdate: any = {};
+
+  const basics = dto.basics;
+  const deliverables = dto.deliverables;
+  const budget = dto.budget;
+  const meta = dto.meta;
+
+  // ─── New structured payload fields (basics / deliverables / budget / meta) ───
+
+  // Basics
+  if (basics?.campaignName !== undefined) mappedUpdate.name = basics.campaignName;
+  if (basics?.type !== undefined) mappedUpdate.type = basics.type;
+  if (basics?.visibility !== undefined) mappedUpdate.visibility = basics.visibility;
+  if (
+    basics?.objective !== undefined ||
+    budget?.productDetails !== undefined
+  ) {
+    mappedUpdate.objective = basics?.objective ?? budget?.productDetails;
+  }
+  if (basics?.location !== undefined) mappedUpdate.location = basics.location;
+  if (basics?.niche !== undefined) mappedUpdate.niches = [basics.niche];
+
+  // Deliverables / creative
+  if (deliverables?.brandGuidelines !== undefined) mappedUpdate.brief = deliverables.brandGuidelines;
+  if (deliverables?.references !== undefined) {
+    if (Array.isArray(deliverables.references)) {
+      mappedUpdate.referenceUrls = deliverables.references;
+    } else if (deliverables.references) {
+      mappedUpdate.referenceUrls = [deliverables.references];
+    } else {
+      mappedUpdate.referenceUrls = [];
+    }
+  }
+  if (meta?.referenceUrls !== undefined) mappedUpdate.referenceUrls = meta.referenceUrls;
+  if (meta?.hashtags !== undefined) mappedUpdate.hashtags = meta.hashtags;
+
+  if (deliverables?.proofOfWorkRequired !== undefined) {
+    mappedUpdate.proofOfWorkReq = deliverables.proofOfWorkRequired;
+  }
+  if (meta?.proofOfWorkReq !== undefined) {
+    mappedUpdate.proofOfWorkReq = meta.proofOfWorkReq;
+  }
+
+  if (deliverables?.platform !== undefined) mappedUpdate.platform = deliverables.platform;
+  if (deliverables?.contentTypes !== undefined) mappedUpdate.contentTypes = deliverables.contentTypes;
+  if (deliverables?.postingType !== undefined) mappedUpdate.postingType = deliverables.postingType;
+  if (deliverables?.usageRights !== undefined) mappedUpdate.usageRights = deliverables.usageRights;
+  if (deliverables?.scriptType !== undefined) mappedUpdate.scriptType = deliverables.scriptType;
+  if (deliverables?.scriptFlow !== undefined) mappedUpdate.scriptFlow = deliverables.scriptFlow;
+  if (deliverables?.scriptFileName !== undefined) mappedUpdate.scriptFileKey = deliverables.scriptFileName || null;
+
+  // Budget
+  if (budget?.budgetMode !== undefined || dto.budgetMode !== undefined || dto.budget?.mode !== undefined) {
+    mappedUpdate.budgetMode = budget?.budgetMode ?? dto.budgetMode ?? dto.budget?.mode;
+  }
+  if (budget?.tierConfig !== undefined || dto.budgetTierPricing?.length || dto.budget?.tierPricing) {
+    if (budget?.tierConfig) {
+      mappedUpdate.budgetTierPricing = budget.tierConfig.map((t) => ({ tier: t.tier, rate: t.amount }));
+    } else if (dto.budgetTierPricing?.length) {
+      mappedUpdate.budgetTierPricing = dto.budgetTierPricing;
+    } else if (dto.budget?.tierPricing) {
+      mappedUpdate.budgetTierPricing = dto.budget.tierPricing.map((t) => ({ tier: t.tier, rate: t.amount }));
+    }
+  }
+  if (budget?.totalBudget !== undefined || dto.budgetTotal !== undefined || dto.budget?.total !== undefined) {
+    mappedUpdate.budgetTotal = (budget?.totalBudget ?? dto.budgetTotal ?? dto.budget?.total)?.toString();
+  }
+  if (
+    budget?.platformFeePercent !== undefined ||
+    dto.platformFeePercent !== undefined ||
+    dto.budget?.platformFeePercent !== undefined
+  ) {
+    mappedUpdate.platformFeePercent = (
+      budget?.platformFeePercent ??
+      dto.platformFeePercent ??
+      dto.budget?.platformFeePercent
+    )?.toString();
+  }
+
+  if (budget?.creatorSizes !== undefined || dto.creatorSizes?.length || dto.budget?.creatorSizes) {
+    mappedUpdate.creatorSizes =
+      budget?.creatorSizes ??
+      (dto.creatorSizes?.length ? dto.creatorSizes : dto.budget?.creatorSizes) ??
+      [];
+  }
+
+  if (budget?.mixMode !== undefined || dto.budget?.mixMode !== undefined) {
+    mappedUpdate.mixMode = budget?.mixMode ?? dto.budget?.mixMode;
+  }
+  if (budget?.selectedTier !== undefined || dto.budget?.selectedTier !== undefined) {
+    mappedUpdate.selectedTier = budget?.selectedTier ?? dto.budget?.selectedTier;
+  }
+  if (budget?.productDetails !== undefined || dto.budget?.productDetails !== undefined) {
+    mappedUpdate.productDetails = budget?.productDetails ?? dto.budget?.productDetails;
+  }
+
+  if (budget?.applicationDeadline || dto.timeline?.applicationDeadline || dto.deadline) {
+    const dl = budget?.applicationDeadline ?? dto.timeline?.applicationDeadline ?? dto.deadline;
+    mappedUpdate.deadline = dl ? new Date(dl) : null;
+    mappedUpdate.applicationDeadline = dl ? new Date(dl) : null;
+  }
+  if (budget?.workDeadline || dto.timeline?.workDeadline) {
+    const wd = budget?.workDeadline ?? dto.timeline?.workDeadline;
+    mappedUpdate.workDeadline = wd ? new Date(wd) : null;
+  }
+  if (budget?.scriptDeadline || dto.timeline?.scriptDeadline) {
+    const sd = budget?.scriptDeadline ?? dto.timeline?.scriptDeadline;
+    mappedUpdate.scriptDeadline = sd ? new Date(sd) : null;
+  }
+
+  // Thumbnail
+  if (basics?.coverImageUrl !== undefined || (dto as any).thumbnailUrl !== undefined) {
+    mappedUpdate.thumbnailUrl = basics?.coverImageUrl ?? (dto as any).thumbnailUrl;
+  }
+
+  // Status (meta or legacy)
+  if (meta?.status !== undefined || dto.status !== undefined) {
+    mappedUpdate.status = meta?.status ?? dto.status;
+  }
+
+  // Legacy for backward compatibility (kept below)
   if (dto.name !== undefined) mappedUpdate.name = dto.name;
   if (dto.type !== undefined) mappedUpdate.type = dto.type;
   if (dto.visibility !== undefined) mappedUpdate.visibility = dto.visibility;

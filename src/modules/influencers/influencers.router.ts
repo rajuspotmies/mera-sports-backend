@@ -8,8 +8,7 @@ import { asyncHandler } from '@/shared/utils/asyncHandler';
 import {
   updateInfluencerProfileSchema,
   searchInfluencersSchema,
-  inviteInfluencerSchema,
-  bulkInviteSchema,
+  inviteInfluencersSchema,
   addPortfolioItemSchema,
   updatePortfolioItemSchema,
 } from './influencers.schema';
@@ -101,21 +100,13 @@ router.get(
   asyncHandler(ctrl.getInfluencerByIdHandler)
 );
 
-// ─── Invites (brand sends) ────────────────────────────────────────────────────
+// ─── Invites (brand sends — accepts 1–50 influencerIds in one call) ──────────
 router.post(
   '/invite',
   authenticate(),
   authorize('brand_owner', 'admin'),
-  validate({ body: inviteInfluencerSchema }),
-  asyncHandler(ctrl.inviteInfluencerHandler)
-);
-
-router.post(
-  '/bulk-invite',
-  authenticate(),
-  authorize('brand_owner', 'admin'),
-  validate({ body: bulkInviteSchema }),
-  asyncHandler(ctrl.bulkInviteHandler)
+  validate({ body: inviteInfluencersSchema }),
+  asyncHandler(ctrl.inviteInfluencersHandler)
 );
 
 export default router;

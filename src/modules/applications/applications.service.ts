@@ -5,7 +5,6 @@ import {
   campaigns,
   influencerProfiles,
   users,
-  conversations,
   brandProfiles,
 } from '@/db/schema';
 import {
@@ -200,21 +199,17 @@ export async function acceptInvite(
     throw new BadRequestError(`Cannot accept invite when status is '${ci.status}'`);
   }
 
-  // Accept at tier_rate — move to accepted + enable chat
+  // Accept at tier_rate — move to accepted (chat starts later at script/work stage)
   const [updated] = await db
     .update(campaignInfluencers)
     .set({
       status: 'accepted',
       agreedBudget: ci.tierRate,
-      chatEnabled: true,
       acceptedAt: new Date(),
       updatedAt: new Date(),
     })
     .where(eq(campaignInfluencers.id, ci.id))
     .returning();
-
-  // Create conversation
-  await ensureConversation(campaignId, ci);
 
   // Increment creatorsAccepted
   const [campaign] = await db
@@ -292,16 +287,12 @@ export async function approveApplication(
     .update(campaignInfluencers)
     .set({
       status: 'accepted',
-      agreedBudget: ci.tierRate, // brand accepts at current tier rate
-      chatEnabled: true,
+      agreedBudget: ci.tierRate,
       acceptedAt: new Date(),
       updatedAt: new Date(),
     })
     .where(eq(campaignInfluencers.id, appId))
     .returning();
-
-  // Create conversation
-  await ensureConversation(campaignId, ci);
 
   // Increment creatorsAccepted
   await db
@@ -448,27 +439,3 @@ async function getCIOrThrow(campaignId: string, influencerId: string) {
   return ci;
 }
 
-async function ensureConversation(
-  campaignId: string,
-  ci: typeof campaignInfluencers.$inferSelect
-) {
-  // Get the brand_id from the campaign
-  const [campaign] = await db
-    .select({ brandId: campaigns.brandId })
-    .from(campaigns)
-    .where(eq(campaigns.id, campaignId))
-    .limit(1);
-
-  if (!campaign) return;
-
-  // Upsert conversation (may already exist from prior negotiation)
-  await db
-    .insert(conversations)
-    .values({
-      campaignId,
-      brandId: campaign.brandId,
-      influencerId: ci.influencerId,
-      status: 'active',
-    })
-    .onConflictDoNothing();
-}

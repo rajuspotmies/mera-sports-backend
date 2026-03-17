@@ -4,6 +4,13 @@ import { sendSuccess, sendCreated } from '@/shared/utils/response';
 import { z } from 'zod';
 
 const sendMessageBody = z.object({ content: z.string().min(1).max(5000) });
+const startConversationBody = z.object({ campaignInfluencerId: z.string().uuid() });
+
+export async function startConversationHandler(req: Request, res: Response): Promise<void> {
+  const { campaignInfluencerId } = startConversationBody.parse(req.body);
+  const result = await messagesService.startConversation(campaignInfluencerId, req.user);
+  sendCreated(res, result);
+}
 
 export async function listConversationsHandler(req: Request, res: Response): Promise<void> {
   const result = await messagesService.listConversations(req.user);

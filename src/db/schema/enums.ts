@@ -32,13 +32,14 @@ export const ciStatusEnum = pgEnum('ci_status', [
   'applied',          // Influencer applied (origin: influencer_application)
   'negotiating',      // Either party has made a counter-offer
   'accepted',         // Both parties agreed on rate — conversation enabled
-  'payment_pending',  // Awaiting first payment from brand
-  'paid',             // First payment confirmed
+  'payment_pending',  // Awaiting brand payment for this round
+  'paid',             // Brand has paid the platform (advance received)
   'script_pending',   // Awaiting script submission
   'script_review',    // Script submitted, awaiting brand review
   'work_pending',     // Script approved, awaiting content submission
   'work_review',      // Work submitted, awaiting brand review
-  'completed',        // Work approved — deal done
+  'completed',        // Work approved, final payment done
+  'settled',          // Admin has settled the influencer payout
   'rejected',         // Brand rejected application/negotiation
   'withdrawn',        // Influencer withdrew
 ]);
@@ -65,6 +66,24 @@ export const paymentStatusEnum = pgEnum('payment_status', [
   'pending_final',
   'completed',
   'refunded',
+]);
+
+export const campaignPaymentStatusEnum = pgEnum('campaign_payment_status', [
+  'pending',        // Razorpay order created, awaiting payment
+  'captured',       // Payment confirmed by gateway
+  'failed',         // Payment failed / expired
+  'refunded',       // Refunded after capture
+]);
+
+export const campaignPaymentTypeEnum = pgEnum('campaign_payment_type', [
+  'advance',        // 50% upfront when brand pays for accepted influencers
+  'final',          // Remaining 50% after work completion
+]);
+
+export const settlementMethodEnum = pgEnum('settlement_method', [
+  'bank_transfer',
+  'upi',
+  'other',
 ]);
 
 export const conversationStatusEnum = pgEnum('conversation_status', [

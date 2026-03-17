@@ -63,9 +63,22 @@ All responses follow a consistent envelope structure:
 - `POST /campaigns/:campaignId/negotiation/:influencerId/accept` - Finalize negotiation (Body: `{ amount }`).
 - `POST /campaigns/:campaignId/negotiation/:influencerId/counter` - Counter-offer (Body: `{ amount, note }`).
 
-### Payments
-- `POST /campaigns/:campaignId/payment` - Initiate payment via gateway (Razorpay). Body: `{ influencerId, type: 'first' | 'final' }`. Returns `{ orderId, amount, currency, gatewayKey }`.
-- `GET /campaigns/:campaignId/payment/status` - Current payment status.
+### Payments (Campaign-level)
+- `POST /campaigns/:campaignId/payment` - Initiate a payment round for all eligible influencers. Body: `{ paymentType: 'advance' | 'final' }`. Returns `{ paymentId, orderId, amount, currency, round, breakdown }`.
+- `GET /campaigns/:campaignId/payment/summary` - Full payment summary: past rounds, amounts, eligible counts for next round.
+- `GET /campaigns/:campaignId/payment/:paymentId` - Details of a specific payment round (which influencers, amounts).
+- `POST /campaigns/:campaignId/payment/webhook` - Razorpay webhook (no auth).
+
+**Payment flow:**
+1. Brand clicks "Pay" → `POST /payment` with `paymentType: 'advance'` → creates Razorpay order for 50% of all accepted influencers' budgets + platform fee.
+2. Razorpay confirms → all included influencers move to `paid` status.
+3. After work completion, brand pays final 50% → `POST /payment` with `paymentType: 'final'`.
+4. Top-ups: if more influencers accept later, brand pays another round (same endpoint).
+
+### Admin Settlements
+- `GET /admin/settlements/unsettled` - List influencers eligible for payout (status: completed). Query: `?campaignId=`.
+- `GET /admin/settlements` - List all settlement records. Query: `?campaignId=`.
+- `POST /admin/settlements/:ciId` - Mark an influencer as settled. Body: `{ amount, method: 'bank_transfer' | 'upi' | 'other', reference?, notes? }`.
 
 ### Scripts & Submissions
 - `GET /campaigns/:campaignId/scripts` - List influencer script submissions.
@@ -78,8 +91,7 @@ All responses follow a consistent envelope structure:
 ### Influencers (Discover)
 - `GET /influencers/search` - Search influencers. Query params: `q`, `niche[]`, `tier[]`, `location`, `minFollowers`, `minEngagement`, etc.
 - `GET /influencers/:id` - Get full influencer profile.
-- `POST /influencers/invite` - Direct invite. Body: `{ influencerId, campaignId, message? }`.
-- `POST /influencers/bulk-invite` - Bulk invite. Body: `{ influencerIds[], campaignId, message? }`.
+- `POST /influencers/invite` - Invite 1–50 influencers. Body: `{ influencerIds[], campaignId, message? }`. Returns `{ succeeded, failed, errors, total }`.
 
 ### Messages & Chat
 - `GET /messages` - List all conversations with unread counts.

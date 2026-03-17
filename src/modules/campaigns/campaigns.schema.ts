@@ -37,7 +37,6 @@ const deliverablesSchema = z.object({
 const budgetSchema = z.object({
   budgetMode: z.enum(['paid', 'product', 'paid_product']),
   totalBudget: z.coerce.number().min(0.01),
-  creatorStrategy: z.enum(['single', 'bulk']),
   mixMode: z.boolean(),
   selectedTier: tierEnum.optional(),
   creatorSizes: z.array(tierEnum).optional(),

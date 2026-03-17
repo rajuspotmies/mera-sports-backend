@@ -252,9 +252,6 @@ export async function createCampaign(brandUser: JWTPayload, dto: CreateCampaignD
   const scriptFileKey =
     deliverables?.scriptFileName ?? undefined;
 
-  const creatorStrategy =
-    budget?.creatorStrategy ?? dto.budget?.strategy;
-
   const mixMode =
     budget?.mixMode ?? dto.budget?.mixMode;
 
@@ -301,7 +298,6 @@ export async function createCampaign(brandUser: JWTPayload, dto: CreateCampaignD
       scriptType,
       scriptFlow,
       scriptFileKey,
-      creatorStrategy,
       mixMode,
       selectedTier,
       productDetails,
@@ -411,9 +407,6 @@ export async function updateCampaign(
       [];
   }
 
-  if (budget?.creatorStrategy !== undefined || dto.budget?.strategy !== undefined) {
-    mappedUpdate.creatorStrategy = budget?.creatorStrategy ?? dto.budget?.strategy;
-  }
   if (budget?.mixMode !== undefined || dto.budget?.mixMode !== undefined) {
     mappedUpdate.mixMode = budget?.mixMode ?? dto.budget?.mixMode;
   }

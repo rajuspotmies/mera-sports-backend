@@ -13,8 +13,7 @@ import type { InfluencerProfile } from '@/db/schema';
 import type {
   UpdateInfluencerProfileDTO,
   SearchInfluencersQuery,
-  InviteInfluencerDTO,
-  BulkInviteDTO,
+  InviteInfluencersDTO,
   AddPortfolioItemDTO,
   UpdatePortfolioItemDTO,
 } from './influencers.schema';
@@ -202,12 +201,62 @@ export async function getInfluencerById(id: string) {
   return { ...profile, portfolio };
 }
 
-// ─── Invite ──────────────────────────────────────────────────────────────────
+// ─── Invite (unified: accepts 1–50 influencerIds) ───────────────────────────
 
-export async function inviteInfluencer(brandUser: JWTPayload, dto: InviteInfluencerDTO) {
+async function inviteSingle(brandId: string, campaignId: string, campaign: { id: string; name: string; budgetTierPricing: unknown }, influencerId: string, message?: string) {
+  const [influencer] = await db
+    .select({ id: influencerProfiles.id, tier: influencerProfiles.tier, userId: influencerProfiles.userId })
+    .from(influencerProfiles)
+    .where(eq(influencerProfiles.id, influencerId))
+    .limit(1);
+
+  if (!influencer) throw new NotFoundError('Influencer');
+
+  const tierPricing = (campaign.budgetTierPricing ?? []) as Array<{ tier: string; rate: number }>;
+  const tierEntry = tierPricing.find((t) => t.tier === influencer.tier);
+  const tierRate = tierEntry ? tierEntry.rate.toString() : null;
+
+  const [existing] = await db
+    .select({ id: campaignInfluencers.id })
+    .from(campaignInfluencers)
+    .where(and(eq(campaignInfluencers.campaignId, campaignId), eq(campaignInfluencers.influencerId, influencerId)))
+    .limit(1);
+
+  if (existing) throw new ConflictError('Influencer is already linked to this campaign');
+
+  const [ci] = await db
+    .insert(campaignInfluencers)
+    .values({
+      campaignId,
+      influencerId,
+      origin: 'brand_invite',
+      status: 'invited',
+      tierRate,
+      applicationNote: message,
+    })
+    .returning();
+
+  await db
+    .update(campaigns)
+    .set({ creatorsInvited: sql`${campaigns.creatorsInvited} + 1`, updatedAt: new Date() })
+    .where(eq(campaigns.id, campaignId));
+
+  await createNotification({
+    userId: influencer.userId,
+    type: 'campaign_invite',
+    title: 'Campaign Invite',
+    message: `You've been invited to the campaign "${campaign.name}". Accept or decline below.`,
+    campaignId,
+    campaignName: campaign.name,
+    actionUrl: `/campaigns/${campaignId}`,
+  });
+
+  return ci;
+}
+
+export async function inviteInfluencers(brandUser: JWTPayload, dto: InviteInfluencersDTO) {
   if (!brandUser.brandId) throw new ForbiddenError('Brand profile not found');
 
-  // Verify campaign belongs to this brand
   const [campaign] = await db
     .select({ id: campaigns.id, name: campaigns.name, budgetTierPricing: campaigns.budgetTierPricing })
     .from(campaigns)
@@ -216,80 +265,16 @@ export async function inviteInfluencer(brandUser: JWTPayload, dto: InviteInfluen
 
   if (!campaign) throw new NotFoundError('Campaign');
 
-  // Get influencer profile to determine tier_rate and userId (for notification)
-  const [influencer] = await db
-    .select({ id: influencerProfiles.id, tier: influencerProfiles.tier, userId: influencerProfiles.userId })
-    .from(influencerProfiles)
-    .where(eq(influencerProfiles.id, dto.influencerId))
-    .limit(1);
-
-  if (!influencer) throw new NotFoundError('Influencer');
-
-  // Find tier_rate from campaign pricing
-  const tierPricing = campaign.budgetTierPricing as Array<{ tier: string; rate: number }>;
-  const tierEntry = tierPricing.find((t) => t.tier === influencer.tier);
-  const tierRate = tierEntry ? tierEntry.rate.toString() : null;
-
-  // Check for duplicate
-  const [existing] = await db
-    .select({ id: campaignInfluencers.id })
-    .from(campaignInfluencers)
-    .where(
-      and(
-        eq(campaignInfluencers.campaignId, dto.campaignId),
-        eq(campaignInfluencers.influencerId, dto.influencerId)
-      )
-    )
-    .limit(1);
-
-  if (existing) throw new ConflictError('Influencer is already linked to this campaign');
-
-  const [ci] = await db
-    .insert(campaignInfluencers)
-    .values({
-      campaignId: dto.campaignId,
-      influencerId: dto.influencerId,
-      origin: 'brand_invite',
-      status: 'invited',
-      tierRate,
-      applicationNote: dto.message,
-    })
-    .returning();
-
-  // Increment creatorsInvited counter
-  await db
-    .update(campaigns)
-    .set({ creatorsInvited: sql`${campaigns.creatorsInvited} + 1`, updatedAt: new Date() })
-    .where(eq(campaigns.id, dto.campaignId));
-
-  // Notify influencer so they see the invite in notifications and can accept/decline (type campaign_invite for action buttons)
-  await createNotification({
-    userId: influencer.userId,
-    type: 'campaign_invite',
-    title: 'Campaign Invite',
-    message: `You've been invited to the campaign "${campaign.name}". Accept or decline below.`,
-    campaignId: dto.campaignId,
-    campaignName: campaign.name,
-    actionUrl: `/campaigns/${dto.campaignId}`,
-  });
-
-  return ci;
-}
-
-export async function bulkInviteInfluencers(brandUser: JWTPayload, dto: BulkInviteDTO) {
   const results = await Promise.allSettled(
-    dto.influencerIds.map((influencerId) =>
-      inviteInfluencer(brandUser, {
-        influencerId,
-        campaignId: dto.campaignId,
-        message: dto.message,
-      })
-    )
+    dto.influencerIds.map((id) => inviteSingle(brandUser.brandId!, dto.campaignId, campaign, id, dto.message))
   );
 
   const succeeded = results.filter((r) => r.status === 'fulfilled').length;
-  const failed = results.filter((r) => r.status === 'rejected').length;
-  return { succeeded, failed, total: dto.influencerIds.length };
+  const failed = results
+    .filter((r): r is PromiseRejectedResult => r.status === 'rejected')
+    .map((r) => ({ reason: r.reason?.message ?? 'Unknown error' }));
+
+  return { succeeded, failed: failed.length, errors: failed, total: dto.influencerIds.length };
 }
 
 // ─── Portfolio ───────────────────────────────────────────────────────────────

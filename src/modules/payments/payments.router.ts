@@ -3,28 +3,36 @@ import { authenticate } from '@/middleware/authenticate';
 import { authorize } from '@/middleware/authorize';
 import { validate } from '@/middleware/validate';
 import { asyncHandler } from '@/shared/utils/asyncHandler';
-import { initiatePaymentSchema } from './payments.schema';
+import { initiatePaymentRoundSchema } from './payments.schema';
 import * as ctrl from './payments.controller';
 
-const router = Router();
+const router = Router({ mergeParams: true });
 
-// Notice: webhook route usually does not require authentication
+// Webhook (no auth — Razorpay calls this)
 router.post('/webhook', asyncHandler(ctrl.razorpayWebhookHandler));
 
 router.use(authenticate());
 
-// These routes assume they will be mounted under /api/v1/campaigns/:campaignId/payment
+// Initiate a payment round for all accepted (unpaid) influencers
 router.post(
-    '/',
-    authorize('brand_owner', 'admin'),
-    validate({ body: initiatePaymentSchema }),
-    asyncHandler(ctrl.initiatePaymentHandler)
+  '/',
+  authorize('brand_owner', 'admin'),
+  validate({ body: initiatePaymentRoundSchema }),
+  asyncHandler(ctrl.initiatePaymentRoundHandler)
 );
 
+// Payment summary: rounds, amounts, eligible counts
 router.get(
-    '/status',
-    authorize('brand_owner', 'influencer', 'admin'),
-    asyncHandler(ctrl.getPaymentStatusHandler)
+  '/summary',
+  authorize('brand_owner', 'admin'),
+  asyncHandler(ctrl.getPaymentSummaryHandler)
+);
+
+// Payment round details (which influencers, amounts)
+router.get(
+  '/:paymentId',
+  authorize('brand_owner', 'admin'),
+  asyncHandler(ctrl.getPaymentRoundHandler)
 );
 
 export default router;

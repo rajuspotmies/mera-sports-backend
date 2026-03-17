@@ -41,7 +41,6 @@ export const campaigns = pgTable('campaigns', {
     .notNull(),
 
   // Budget strategy / tiers
-  creatorStrategy: varchar('creator_strategy', { length: 50 }), // 'single' | 'bulk'
   mixMode: boolean('mix_mode'), // true = multi tier, false = single tier
   selectedTier: varchar('selected_tier', { length: 20 }), // when mixMode === false
   productDetails: text('product_details'),

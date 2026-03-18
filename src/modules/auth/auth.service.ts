@@ -429,16 +429,19 @@ export async function softDeleteUser(userId: string) {
 // ─── OTP Service ─────────────────────────────────────────────────────────────
 
 export async function sendOtp(dto: SendOtpDTO) {
-  // Use the phone number from the request payload only (no default/hardcode)
   const phoneNumber = dto.phoneNumber;
   logger.info(`[OTP] Request received for phone: ${phoneNumber}`);
 
-  // Generate random 6-digit OTP
+  // App Store / Play Store review account — skip real OTP and WhatsApp
+  if (phoneNumber === env.REVIEW_ACCOUNT_PHONE) {
+    logger.info(`[OTP] Review account detected — no real OTP sent`);
+    return { success: true, message: 'OTP sent successfully' };
+  }
+
   const code = Math.floor(100000 + Math.random() * 900000).toString();
   const expiresAt = new Date();
-  expiresAt.setMinutes(expiresAt.getMinutes() + 10); // 10 min expiry
+  expiresAt.setMinutes(expiresAt.getMinutes() + 10);
 
-  // Upsert OTP (stored under the same number as received)
   await db.insert(otpCodes)
     .values({
       phoneNumber,
@@ -450,13 +453,10 @@ export async function sendOtp(dto: SendOtpDTO) {
       set: { code, expiresAt, createdAt: new Date() },
     });
 
-  // Call WhatsApp service with the same number from the request
   try {
     await sendWhatsAppOTP(phoneNumber, code);
   } catch (error) {
     logger.error(`Failed to send OTP to ${phoneNumber} via WhatsApp`, error);
-    // Continue even if WhatsApp fails in dev if needed, or throw error
-    // For now, let's keep it to throw if it fails once we're in "real scenario"
   }
 
   logger.info(`[DEVDOTP] OTP for ${phoneNumber}: ${code}`);
@@ -478,7 +478,10 @@ export async function verifyOtp(dto: VerifyOtpDTO) {
     )
     .limit(1);
 
-  if (!stored && dto.code !== '123456') { // Allow 123456 for testing if needed, or remove
+  const isReviewAccount =
+    dto.phoneNumber === env.REVIEW_ACCOUNT_PHONE && dto.code === env.REVIEW_ACCOUNT_OTP;
+
+  if (!stored && !isReviewAccount) {
     throw new UnauthorizedError('Invalid or expired OTP code');
   }
 

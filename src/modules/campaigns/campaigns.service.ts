@@ -68,7 +68,6 @@ export async function discoverCampaigns(query: ListCampaignsQuery) {
       type: campaigns.type,
       objective: campaigns.objective,
       budgetMode: campaigns.budgetMode,
-      budgetTierPricing: campaigns.budgetTierPricing,
       niches: campaigns.niches,
       creatorSizes: campaigns.creatorSizes,
       brief: campaigns.brief,
@@ -76,7 +75,6 @@ export async function discoverCampaigns(query: ListCampaignsQuery) {
       deadline: campaigns.deadline,
       thumbnailUrl: campaigns.thumbnailUrl,
       applicationsCount: campaigns.applicationsCount,
-      // Brand info (safe to show)
       brandName: brandProfiles.brandName,
       brandLogoUrl: brandProfiles.brandLogoUrl,
     })
@@ -104,15 +102,12 @@ export async function getCampaignById(id: string, requester: JWTPayload) {
 
   // Private campaigns: only brand owner, admin can view
   if (campaign.visibility === 'private') {
-    // Admin: full access
     if (requester.role === 'admin') return campaign;
 
-    // Brand owner: must own the campaign
     if (requester.role === 'brand_owner' && campaign.brandId === requester.brandId) {
       return campaign;
     }
 
-    // Influencer: can view if they have a CI row (invited/applied/etc.) for this campaign
     if (requester.role === 'influencer' && requester.influencerId) {
       const [ci] = await db
         .select({ id: campaignInfluencers.id })
@@ -125,13 +120,22 @@ export async function getCampaignById(id: string, requester: JWTPayload) {
         )
         .limit(1);
 
-      if (ci) return campaign;
+      if (ci) return stripTierPricingForInfluencer(campaign);
     }
 
     throw new ForbiddenError('This campaign is private');
   }
 
+  if (requester.role === 'influencer') {
+    return stripTierPricingForInfluencer(campaign);
+  }
+
   return campaign;
+}
+
+function stripTierPricingForInfluencer(campaign: Campaign) {
+  const { budgetTierPricing, budgetTotal, ...safe } = campaign;
+  return safe;
 }
 
 // ─── Create ───────────────────────────────────────────────────────────────────

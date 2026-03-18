@@ -386,12 +386,20 @@ export async function getMyApplications(influencerUser: JWTPayload, query: ListA
       applicationNote: campaignInfluencers.applicationNote,
       appliedAt: campaignInfluencers.appliedAt,
       acceptedAt: campaignInfluencers.acceptedAt,
+      paidAt: campaignInfluencers.paidAt,
+      finalPaidAt: campaignInfluencers.finalPaidAt,
+      productShippedAt: campaignInfluencers.productShippedAt,
+      productReceivedAt: campaignInfluencers.productReceivedAt,
+      completedAt: campaignInfluencers.completedAt,
+      settledAt: campaignInfluencers.settledAt,
       createdAt: campaignInfluencers.createdAt,
       // Campaign info
       campaignName: campaigns.name,
       campaignType: campaigns.type,
       campaignStatus: campaigns.status,
       campaignThumbnail: campaigns.thumbnailUrl,
+      budgetMode: campaigns.budgetMode,
+      scriptType: campaigns.scriptType,
     })
     .from(campaignInfluencers)
     .innerJoin(campaigns, eq(campaigns.id, campaignInfluencers.campaignId))
@@ -405,6 +413,104 @@ export async function getMyApplications(influencerUser: JWTPayload, query: ListA
     .where(where);
 
   return { applications: rows, meta: buildPaginationMeta(count, { page, limit }) };
+}
+
+// ─── Product tracking ────────────────────────────────────────────────────────
+
+export async function markProductShipped(
+  campaignId: string,
+  appId: string,
+  brandUser: JWTPayload
+) {
+  await assertBrandOwnsCampaign(campaignId, brandUser);
+
+  const [ciData] = await db
+    .select({
+      ci: campaignInfluencers,
+      influencerUserId: influencerProfiles.userId,
+      campaignName: campaigns.name,
+      budgetMode: campaigns.budgetMode,
+    })
+    .from(campaignInfluencers)
+    .innerJoin(influencerProfiles, eq(influencerProfiles.id, campaignInfluencers.influencerId))
+    .innerJoin(campaigns, eq(campaigns.id, campaignInfluencers.campaignId))
+    .where(and(eq(campaignInfluencers.id, appId), eq(campaignInfluencers.campaignId, campaignId)))
+    .limit(1);
+
+  if (!ciData) throw new NotFoundError('Application');
+  const { ci, influencerUserId, campaignName, budgetMode } = ciData;
+
+  if (budgetMode !== 'product' && budgetMode !== 'paid_product') {
+    throw new BadRequestError('This campaign does not involve a product');
+  }
+
+  const [updated] = await db
+    .update(campaignInfluencers)
+    .set({ productShippedAt: new Date(), updatedAt: new Date() })
+    .where(eq(campaignInfluencers.id, appId))
+    .returning();
+
+  await createNotification({
+    userId: influencerUserId,
+    type: 'system',
+    title: 'Product Shipped',
+    message: `The product for "${campaignName}" has been shipped to you!`,
+    campaignId,
+    campaignName,
+    actionUrl: `/campaigns/${campaignId}`,
+  });
+
+  return updated;
+}
+
+export async function confirmProductReceived(
+  campaignId: string,
+  influencerUser: JWTPayload
+) {
+  if (!influencerUser.influencerId) throw new ForbiddenError('Influencer profile not found');
+
+  const [ciData] = await db
+    .select({
+      ci: campaignInfluencers,
+      campaignName: campaigns.name,
+      budgetMode: campaigns.budgetMode,
+      brandUserId: brandProfiles.userId,
+    })
+    .from(campaignInfluencers)
+    .innerJoin(campaigns, eq(campaigns.id, campaignInfluencers.campaignId))
+    .innerJoin(brandProfiles, eq(brandProfiles.id, campaigns.brandId))
+    .where(
+      and(
+        eq(campaignInfluencers.campaignId, campaignId),
+        eq(campaignInfluencers.influencerId, influencerUser.influencerId)
+      )
+    )
+    .limit(1);
+
+  if (!ciData) throw new NotFoundError('Application');
+  const { ci, campaignName, budgetMode, brandUserId } = ciData;
+
+  if (budgetMode !== 'product' && budgetMode !== 'paid_product') {
+    throw new BadRequestError('This campaign does not involve a product');
+  }
+
+  const [updated] = await db
+    .update(campaignInfluencers)
+    .set({ productReceivedAt: new Date(), updatedAt: new Date() })
+    .where(eq(campaignInfluencers.id, ci.id))
+    .returning();
+
+  await createNotification({
+    userId: brandUserId,
+    type: 'system',
+    title: 'Product Received',
+    message: `The influencer has confirmed receiving the product for "${campaignName}".`,
+    campaignId,
+    campaignName,
+    actionUrl: `/campaigns/${campaignId}/applications`,
+  });
+
+  return updated;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

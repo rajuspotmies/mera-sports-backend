@@ -66,6 +66,10 @@ const envSchema = z.object({
   WHATSAPP_ACCESS_TOKEN: z.string().optional(),
   WHATSAPP_API_VERSION: z.string().default('v22.0'),
   WHATSAPP_OTP_TEMPLATE_NAME: z.string().default('otp_verification'),
+
+  // App Store / Play Store review account (fixed OTP bypass)
+  REVIEW_ACCOUNT_PHONE: z.string().default('+911234567890'),
+  REVIEW_ACCOUNT_OTP: z.string().default('000000'),
 });
 
 const parsed = envSchema.safeParse(process.env);

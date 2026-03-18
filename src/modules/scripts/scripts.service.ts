@@ -17,6 +17,43 @@ export async function listScriptsForCampaign(campaignId: string, brandUser: JWTP
   return rows.map((r) => ({ ...r.script_versions, ci: r.campaign_influencers }));
 }
 
+export async function getScriptsForInfluencer(campaignId: string, influencerUser: JWTPayload) {
+  if (!influencerUser.influencerId) throw new ForbiddenError('Influencer profile not found');
+
+  const [ciData] = await db
+    .select({
+      ciId: campaignInfluencers.id,
+      scriptType: campaigns.scriptType,
+      scriptFileKey: campaigns.scriptFileKey,
+      scriptFlow: campaigns.scriptFlow,
+    })
+    .from(campaignInfluencers)
+    .innerJoin(campaigns, eq(campaigns.id, campaignInfluencers.campaignId))
+    .where(
+      and(
+        eq(campaignInfluencers.campaignId, campaignId),
+        eq(campaignInfluencers.influencerId, influencerUser.influencerId)
+      )
+    )
+    .limit(1);
+
+  if (!ciData) throw new NotFoundError('You are not part of this campaign');
+
+  const versions = await db
+    .select()
+    .from(scriptVersions)
+    .where(eq(scriptVersions.campaignInfluencerId, ciData.ciId))
+    .orderBy(scriptVersions.versionNumber);
+
+  return {
+    scriptType: ciData.scriptType,
+    brandScript: ciData.scriptType === 'brand'
+      ? { fileKey: ciData.scriptFileKey, flow: ciData.scriptFlow }
+      : null,
+    versions,
+  };
+}
+
 export async function submitScript(
   campaignId: string,
   influencerUser: JWTPayload,

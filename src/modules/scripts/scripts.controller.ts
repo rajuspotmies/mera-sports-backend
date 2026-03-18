@@ -8,6 +8,11 @@ export async function listScriptsHandler(req: Request, res: Response): Promise<v
   sendSuccess(res, result);
 }
 
+export async function getMyScriptsHandler(req: Request, res: Response): Promise<void> {
+  const result = await scriptsService.getScriptsForInfluencer(req.params.campaignId, req.user);
+  sendSuccess(res, result);
+}
+
 export async function submitScriptHandler(req: Request, res: Response): Promise<void> {
   if (!req.file) throw new BadRequestError('No file uploaded');
   const key = (req.file as any).key; // Ensure we only get the S3 key

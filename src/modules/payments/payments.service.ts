@@ -14,6 +14,31 @@ import { AppError, BadRequestError, NotFoundError, ForbiddenError } from '@/shar
 import { createNotification } from '../notifications/notifications.service';
 import type { JWTPayload } from '@/shared/types/api';
 
+async function advanceCIsAfterPayment(
+  ciIds: string[],
+  campaignId: string
+) {
+  const [campaign] = await db
+    .select({ scriptType: campaigns.scriptType })
+    .from(campaigns)
+    .where(eq(campaigns.id, campaignId))
+    .limit(1);
+
+  const scriptType = campaign?.scriptType;
+
+  if (scriptType === 'creator') {
+    await db
+      .update(campaignInfluencers)
+      .set({ status: 'script_pending', updatedAt: new Date() })
+      .where(inArray(campaignInfluencers.id, ciIds));
+  } else {
+    await db
+      .update(campaignInfluencers)
+      .set({ status: 'work_pending', updatedAt: new Date() })
+      .where(inArray(campaignInfluencers.id, ciIds));
+  }
+}
+
 let razorpay: Razorpay | null = null;
 function getRazorpay() {
   if (!razorpay) {
@@ -55,7 +80,7 @@ export async function initiatePaymentRound(
     throw new ForbiddenError('You do not own this campaign');
   }
 
-  // Determine which CIs to include based on payment type
+  // Advance: from accepted CIs. Final: from work_review (content approved, awaiting payment).
   const eligibleStatus = paymentType === 'advance' ? 'accepted' : 'work_review';
 
   const eligibleCIs = await db
@@ -214,15 +239,24 @@ export async function handleCampaignPaymentSuccess(
 
   if (ciIds.length === 0) return;
 
-  const nextStatus = paymentType === 'advance' ? 'paid' : 'completed';
-  const timestampField = paymentType === 'advance'
-    ? { paidAt: new Date() }
-    : { completedAt: new Date() };
+  if (paymentType === 'advance') {
+    await db
+      .update(campaignInfluencers)
+      .set({ status: 'paid', paidAt: new Date(), updatedAt: new Date() })
+      .where(inArray(campaignInfluencers.id, ciIds));
 
-  await db
-    .update(campaignInfluencers)
-    .set({ status: nextStatus, ...timestampField, updatedAt: new Date() })
-    .where(inArray(campaignInfluencers.id, ciIds));
+    await advanceCIsAfterPayment(ciIds, campaignId);
+  } else {
+    await db
+      .update(campaignInfluencers)
+      .set({
+        status: 'completed',
+        finalPaidAt: new Date(),
+        completedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(inArray(campaignInfluencers.id, ciIds));
+  }
 
   // Notify influencers
   const ciDetails = await db

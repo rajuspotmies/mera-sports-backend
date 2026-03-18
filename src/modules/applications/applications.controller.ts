@@ -51,3 +51,13 @@ export async function getMyApplicationsHandler(req: Request, res: Response): Pro
   logger.info(`[Applications] GET my applications: influencerId=${influencerId}, count=${applications.length}, total=${meta?.total ?? 0}`);
   sendSuccess(res, applications, 200, meta);
 }
+
+export async function markProductShippedHandler(req: Request, res: Response): Promise<void> {
+  const result = await appService.markProductShipped(req.params.campaignId, req.params.appId, req.user);
+  sendSuccess(res, result);
+}
+
+export async function confirmProductReceivedHandler(req: Request, res: Response): Promise<void> {
+  const result = await appService.confirmProductReceived(req.params.campaignId, req.user);
+  sendSuccess(res, result);
+}

@@ -8,7 +8,9 @@ const router = Router();
 router.use(authenticate());
 
 router.get('/', asyncHandler(ctrl.listNotificationsHandler));
-router.post('/:id/read', asyncHandler(ctrl.markReadHandler));
+router.post('/send-test', asyncHandler(ctrl.sendTestNotificationHandler)); // body: { userId? } — admin can send to specific user
 router.post('/read-all', asyncHandler(ctrl.markAllReadHandler));
+router.post('/register-token', asyncHandler(ctrl.registerTokenHandler));
+router.post('/:id/read', asyncHandler(ctrl.markReadHandler));
 
 export default router;

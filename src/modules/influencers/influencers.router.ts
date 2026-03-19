@@ -8,19 +8,23 @@ import { asyncHandler } from '@/shared/utils/asyncHandler';
 import {
   updateInfluencerProfileSchema,
   searchInfluencersSchema,
-  inviteInfluencerSchema,
-  bulkInviteSchema,
+  inviteInfluencersSchema,
+  addPortfolioItemSchema,
+  updatePortfolioItemSchema,
 } from './influencers.schema';
 import * as ctrl from './influencers.controller';
 import * as authCtrl from '../auth/auth.controller';
-import { registerSchema, loginSchema, updateMeSchema } from '../auth/auth.schema';
+import { updateMeSchema, sendOtpSchema, verifyOtpSchema } from '../auth/auth.schema';
+import { getMyApplicationsHandler } from '../applications/applications.controller';
+import { listApplicationsQuerySchema } from '../applications/applications.schema';
 
 const router = Router();
 
 // ─── Auth Routes (Role: influencer) ──────────────────────────────────────────
+// Note: Influencers use OTP-based authentication (phone number)
 
-router.post('/auth/register', authLimiter, validate({ body: registerSchema }), asyncHandler(authCtrl.registerHandler('influencer')));
-router.post('/auth/login', authLimiter, validate({ body: loginSchema }), asyncHandler(authCtrl.loginHandler('influencer')));
+router.post('/auth/send-otp', authLimiter, validate({ body: sendOtpSchema }), asyncHandler(authCtrl.sendOtpHandler));
+router.post('/auth/verify-otp', authLimiter, validate({ body: verifyOtpSchema }), asyncHandler(authCtrl.verifyOtpHandler('influencer')));
 router.post('/auth/refresh', asyncHandler(authCtrl.refreshHandler('influencer')));
 router.post('/auth/logout', asyncHandler(authCtrl.logoutHandler('influencer')));
 
@@ -51,6 +55,35 @@ router.post(
   asyncHandler(ctrl.uploadAvatarHandler)
 );
 
+// ─── Portfolio ───────────────────────────────────────────────────────────────
+router.post(
+  '/portfolio',
+  authenticate('influencer'),
+  validate({ body: addPortfolioItemSchema }),
+  asyncHandler(ctrl.addPortfolioItemHandler)
+);
+
+router.patch(
+  '/portfolio/:itemId',
+  authenticate('influencer'),
+  validate({ body: updatePortfolioItemSchema }),
+  asyncHandler(ctrl.updatePortfolioItemHandler)
+);
+
+router.delete(
+  '/portfolio/:itemId',
+  authenticate('influencer'),
+  asyncHandler(ctrl.deletePortfolioItemHandler)
+);
+
+// ─── My applications (campaigns invited to or applied to) ───────────────────────
+router.get(
+  '/applications',
+  authenticate('influencer'),
+  validate({ query: listApplicationsQuerySchema }),
+  asyncHandler(getMyApplicationsHandler)
+);
+
 // ─── Discover (used by brands + admin) ───────────────────────────────────────
 // These routes accept any authenticated user, then authorize checks the role
 router.get(
@@ -67,21 +100,13 @@ router.get(
   asyncHandler(ctrl.getInfluencerByIdHandler)
 );
 
-// ─── Invites (brand sends) ────────────────────────────────────────────────────
+// ─── Invites (brand sends — accepts 1–50 influencerIds in one call) ──────────
 router.post(
   '/invite',
   authenticate(),
   authorize('brand_owner', 'admin'),
-  validate({ body: inviteInfluencerSchema }),
-  asyncHandler(ctrl.inviteInfluencerHandler)
-);
-
-router.post(
-  '/bulk-invite',
-  authenticate(),
-  authorize('brand_owner', 'admin'),
-  validate({ body: bulkInviteSchema }),
-  asyncHandler(ctrl.bulkInviteHandler)
+  validate({ body: inviteInfluencersSchema }),
+  asyncHandler(ctrl.inviteInfluencersHandler)
 );
 
 export default router;

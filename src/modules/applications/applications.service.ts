@@ -5,7 +5,6 @@ import {
   campaigns,
   influencerProfiles,
   users,
-  conversations,
   brandProfiles,
 } from '@/db/schema';
 import {
@@ -91,6 +90,8 @@ export async function applyToCampaign(
       name: campaigns.name,
       visibility: campaigns.visibility,
       status: campaigns.status,
+      applicationDeadline: campaigns.applicationDeadline,
+      workDeadline: campaigns.workDeadline,
       budgetTierPricing: campaigns.budgetTierPricing,
       brandUserId: brandProfiles.userId,
     })
@@ -102,6 +103,14 @@ export async function applyToCampaign(
   if (!campaignData) throw new NotFoundError('Campaign');
   if (campaignData.visibility !== 'public') throw new ForbiddenError('This campaign is not open for applications');
   if (campaignData.status !== 'active') throw new BadRequestError('Campaign is not currently accepting applications');
+
+  const now = new Date();
+  if (campaignData.applicationDeadline && campaignData.applicationDeadline < now) {
+    throw new BadRequestError('Application deadline has passed');
+  }
+  if (campaignData.workDeadline && campaignData.workDeadline < now) {
+    throw new BadRequestError('Work deadline has passed');
+  }
 
   // Check for duplicate
   const [existing] = await db
@@ -122,16 +131,23 @@ export async function applyToCampaign(
     throw new ConflictError('You have already applied to this campaign');
   }
 
-  // Resolve tier_rate from campaign pricing
-  const [influencer] = await db
-    .select({ tier: influencerProfiles.tier })
-    .from(influencerProfiles)
-    .where(eq(influencerProfiles.id, influencerUser.influencerId))
-    .limit(1);
+  // Resolve tier_rate: for public single-tier with quote, use provided amount; else from campaign pricing
+  const tierPricing = (campaignData.budgetTierPricing || []) as Array<{ tier: string; rate: number }>;
+  const isSingleTier = tierPricing.length === 1;
+  const quotedAmount = dto.amount ?? dto.proposedBudget;
 
-  const tierPricing = campaignData.budgetTierPricing as Array<{ tier: string; rate: number }>;
-  const tierEntry = tierPricing.find((t) => t.tier === influencer?.tier);
-  const tierRate = tierEntry ? tierEntry.rate.toString() : null;
+  let tierRate: string | null;
+  if (isSingleTier && quotedAmount != null && quotedAmount > 0) {
+    tierRate = quotedAmount.toString();
+  } else {
+    const [influencer] = await db
+      .select({ tier: influencerProfiles.tier })
+      .from(influencerProfiles)
+      .where(eq(influencerProfiles.id, influencerUser.influencerId))
+      .limit(1);
+    const tierEntry = tierPricing.find((t) => t.tier === influencer?.tier);
+    tierRate = tierEntry ? tierEntry.rate.toString() : null;
+  }
 
   const [ci] = await db
     .insert(campaignInfluencers)
@@ -183,21 +199,17 @@ export async function acceptInvite(
     throw new BadRequestError(`Cannot accept invite when status is '${ci.status}'`);
   }
 
-  // Accept at tier_rate — move to accepted + enable chat
+  // Accept at tier_rate — move to accepted (chat starts later at script/work stage)
   const [updated] = await db
     .update(campaignInfluencers)
     .set({
       status: 'accepted',
       agreedBudget: ci.tierRate,
-      chatEnabled: true,
       acceptedAt: new Date(),
       updatedAt: new Date(),
     })
     .where(eq(campaignInfluencers.id, ci.id))
     .returning();
-
-  // Create conversation
-  await ensureConversation(campaignId, ci);
 
   // Increment creatorsAccepted
   const [campaign] = await db
@@ -275,16 +287,12 @@ export async function approveApplication(
     .update(campaignInfluencers)
     .set({
       status: 'accepted',
-      agreedBudget: ci.tierRate, // brand accepts at current tier rate
-      chatEnabled: true,
+      agreedBudget: ci.tierRate,
       acceptedAt: new Date(),
       updatedAt: new Date(),
     })
     .where(eq(campaignInfluencers.id, appId))
     .returning();
-
-  // Create conversation
-  await ensureConversation(campaignId, ci);
 
   // Increment creatorsAccepted
   await db
@@ -378,12 +386,20 @@ export async function getMyApplications(influencerUser: JWTPayload, query: ListA
       applicationNote: campaignInfluencers.applicationNote,
       appliedAt: campaignInfluencers.appliedAt,
       acceptedAt: campaignInfluencers.acceptedAt,
+      paidAt: campaignInfluencers.paidAt,
+      finalPaidAt: campaignInfluencers.finalPaidAt,
+      productShippedAt: campaignInfluencers.productShippedAt,
+      productReceivedAt: campaignInfluencers.productReceivedAt,
+      completedAt: campaignInfluencers.completedAt,
+      settledAt: campaignInfluencers.settledAt,
       createdAt: campaignInfluencers.createdAt,
       // Campaign info
       campaignName: campaigns.name,
       campaignType: campaigns.type,
       campaignStatus: campaigns.status,
       campaignThumbnail: campaigns.thumbnailUrl,
+      budgetMode: campaigns.budgetMode,
+      scriptType: campaigns.scriptType,
     })
     .from(campaignInfluencers)
     .innerJoin(campaigns, eq(campaigns.id, campaignInfluencers.campaignId))
@@ -397,6 +413,104 @@ export async function getMyApplications(influencerUser: JWTPayload, query: ListA
     .where(where);
 
   return { applications: rows, meta: buildPaginationMeta(count, { page, limit }) };
+}
+
+// ─── Product tracking ────────────────────────────────────────────────────────
+
+export async function markProductShipped(
+  campaignId: string,
+  appId: string,
+  brandUser: JWTPayload
+) {
+  await assertBrandOwnsCampaign(campaignId, brandUser);
+
+  const [ciData] = await db
+    .select({
+      ci: campaignInfluencers,
+      influencerUserId: influencerProfiles.userId,
+      campaignName: campaigns.name,
+      budgetMode: campaigns.budgetMode,
+    })
+    .from(campaignInfluencers)
+    .innerJoin(influencerProfiles, eq(influencerProfiles.id, campaignInfluencers.influencerId))
+    .innerJoin(campaigns, eq(campaigns.id, campaignInfluencers.campaignId))
+    .where(and(eq(campaignInfluencers.id, appId), eq(campaignInfluencers.campaignId, campaignId)))
+    .limit(1);
+
+  if (!ciData) throw new NotFoundError('Application');
+  const { ci, influencerUserId, campaignName, budgetMode } = ciData;
+
+  if (budgetMode !== 'product' && budgetMode !== 'paid_product') {
+    throw new BadRequestError('This campaign does not involve a product');
+  }
+
+  const [updated] = await db
+    .update(campaignInfluencers)
+    .set({ productShippedAt: new Date(), updatedAt: new Date() })
+    .where(eq(campaignInfluencers.id, appId))
+    .returning();
+
+  await createNotification({
+    userId: influencerUserId,
+    type: 'system',
+    title: 'Product Shipped',
+    message: `The product for "${campaignName}" has been shipped to you!`,
+    campaignId,
+    campaignName,
+    actionUrl: `/campaigns/${campaignId}`,
+  });
+
+  return updated;
+}
+
+export async function confirmProductReceived(
+  campaignId: string,
+  influencerUser: JWTPayload
+) {
+  if (!influencerUser.influencerId) throw new ForbiddenError('Influencer profile not found');
+
+  const [ciData] = await db
+    .select({
+      ci: campaignInfluencers,
+      campaignName: campaigns.name,
+      budgetMode: campaigns.budgetMode,
+      brandUserId: brandProfiles.userId,
+    })
+    .from(campaignInfluencers)
+    .innerJoin(campaigns, eq(campaigns.id, campaignInfluencers.campaignId))
+    .innerJoin(brandProfiles, eq(brandProfiles.id, campaigns.brandId))
+    .where(
+      and(
+        eq(campaignInfluencers.campaignId, campaignId),
+        eq(campaignInfluencers.influencerId, influencerUser.influencerId)
+      )
+    )
+    .limit(1);
+
+  if (!ciData) throw new NotFoundError('Application');
+  const { ci, campaignName, budgetMode, brandUserId } = ciData;
+
+  if (budgetMode !== 'product' && budgetMode !== 'paid_product') {
+    throw new BadRequestError('This campaign does not involve a product');
+  }
+
+  const [updated] = await db
+    .update(campaignInfluencers)
+    .set({ productReceivedAt: new Date(), updatedAt: new Date() })
+    .where(eq(campaignInfluencers.id, ci.id))
+    .returning();
+
+  await createNotification({
+    userId: brandUserId,
+    type: 'system',
+    title: 'Product Received',
+    message: `The influencer has confirmed receiving the product for "${campaignName}".`,
+    campaignId,
+    campaignName,
+    actionUrl: `/campaigns/${campaignId}/applications`,
+  });
+
+  return updated;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -431,27 +545,3 @@ async function getCIOrThrow(campaignId: string, influencerId: string) {
   return ci;
 }
 
-async function ensureConversation(
-  campaignId: string,
-  ci: typeof campaignInfluencers.$inferSelect
-) {
-  // Get the brand_id from the campaign
-  const [campaign] = await db
-    .select({ brandId: campaigns.brandId })
-    .from(campaigns)
-    .where(eq(campaigns.id, campaignId))
-    .limit(1);
-
-  if (!campaign) return;
-
-  // Upsert conversation (may already exist from prior negotiation)
-  await db
-    .insert(conversations)
-    .values({
-      campaignId,
-      brandId: campaign.brandId,
-      influencerId: ci.influencerId,
-      status: 'active',
-    })
-    .onConflictDoNothing();
-}

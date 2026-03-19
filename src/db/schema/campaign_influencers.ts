@@ -36,11 +36,17 @@ export const campaignInfluencers = pgTable(
     applicationNote: text('application_note'),
     appliedAt: timestamp('applied_at', { withTimezone: true }),
 
+    // Product tracking (for product / paid_product campaigns)
+    productShippedAt: timestamp('product_shipped_at', { withTimezone: true }),
+    productReceivedAt: timestamp('product_received_at', { withTimezone: true }),
+
     // Lifecycle timestamps
     acceptedAt: timestamp('accepted_at', { withTimezone: true }),
     connectedAt: timestamp('connected_at', { withTimezone: true }).defaultNow(),
     paidAt: timestamp('paid_at', { withTimezone: true }),
+    finalPaidAt: timestamp('final_paid_at', { withTimezone: true }),
     completedAt: timestamp('completed_at', { withTimezone: true }),
+    settledAt: timestamp('settled_at', { withTimezone: true }),
 
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),

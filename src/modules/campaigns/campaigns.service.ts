@@ -68,7 +68,6 @@ export async function discoverCampaigns(query: ListCampaignsQuery) {
       type: campaigns.type,
       objective: campaigns.objective,
       budgetMode: campaigns.budgetMode,
-      budgetTierPricing: campaigns.budgetTierPricing,
       niches: campaigns.niches,
       creatorSizes: campaigns.creatorSizes,
       brief: campaigns.brief,
@@ -76,7 +75,6 @@ export async function discoverCampaigns(query: ListCampaignsQuery) {
       deadline: campaigns.deadline,
       thumbnailUrl: campaigns.thumbnailUrl,
       applicationsCount: campaigns.applicationsCount,
-      // Brand info (safe to show)
       brandName: brandProfiles.brandName,
       brandLogoUrl: brandProfiles.brandLogoUrl,
     })
@@ -98,22 +96,46 @@ export async function discoverCampaigns(query: ListCampaignsQuery) {
 // ─── Get single campaign ──────────────────────────────────────────────────────
 
 export async function getCampaignById(id: string, requester: JWTPayload) {
-  const [campaign] = await db
-    .select()
-    .from(campaigns)
-    .where(eq(campaigns.id, id))
-    .limit(1);
+  const [campaign] = await db.select().from(campaigns).where(eq(campaigns.id, id)).limit(1);
 
   if (!campaign) throw new NotFoundError('Campaign');
 
   // Private campaigns: only brand owner, admin can view
   if (campaign.visibility === 'private') {
     if (requester.role === 'admin') return campaign;
-    if (requester.role === 'brand_owner' && campaign.brandId === requester.brandId) return campaign;
+
+    if (requester.role === 'brand_owner' && campaign.brandId === requester.brandId) {
+      return campaign;
+    }
+
+    if (requester.role === 'influencer' && requester.influencerId) {
+      const [ci] = await db
+        .select({ id: campaignInfluencers.id })
+        .from(campaignInfluencers)
+        .where(
+          and(
+            eq(campaignInfluencers.campaignId, campaign.id),
+            eq(campaignInfluencers.influencerId, requester.influencerId)
+          )
+        )
+        .limit(1);
+
+      if (ci) return stripTierPricingForInfluencer(campaign);
+    }
+
     throw new ForbiddenError('This campaign is private');
   }
 
+  if (requester.role === 'influencer') {
+    return stripTierPricingForInfluencer(campaign);
+  }
+
   return campaign;
+}
+
+function stripTierPricingForInfluencer(campaign: Campaign) {
+  const { budgetTierPricing, budgetTotal, ...safe } = campaign;
+  return safe;
 }
 
 // ─── Create ───────────────────────────────────────────────────────────────────
@@ -121,32 +143,169 @@ export async function getCampaignById(id: string, requester: JWTPayload) {
 export async function createCampaign(brandUser: JWTPayload, dto: CreateCampaignDTO): Promise<Campaign> {
   if (!brandUser.brandId) throw new ForbiddenError('Brand profile not found');
 
+  // Prefer new structured payload (basics/deliverables/budget/meta) but keep
+  // backward compatibility with legacy flat fields where possible.
+  const basics = dto.basics;
+  const deliverables = dto.deliverables;
+  const budget = dto.budget;
+  const meta = dto.meta;
+
+  const name = basics?.campaignName ?? dto.name ?? '';
+  const type = basics?.type ?? dto.type ?? 'influencer';
+  const visibility = basics?.visibility ?? dto.visibility ?? 'private';
+  const objective =
+    basics?.objective ?? dto.objective ?? budget?.productDetails ?? dto.budget?.productDetails;
+
+  const budgetMode =
+    budget?.budgetMode ?? dto.budgetMode ?? dto.budget?.mode ?? 'paid';
+
+  const budgetTierPricing =
+    budget?.tierConfig?.map((t) => ({ tier: t.tier, rate: t.amount })) ??
+    dto.budgetTierPricing ??
+    dto.budget?.tierPricing?.map((t) => ({ tier: t.tier, rate: t.amount })) ??
+    [];
+
+  const budgetTotal =
+    (budget?.totalBudget ?? dto.budgetTotal ?? dto.budget?.total)?.toString();
+
+  const platformFeePercent =
+    (budget?.platformFeePercent ??
+      dto.platformFeePercent ??
+      dto.budget?.platformFeePercent)?.toString() || '10';
+
+  const location =
+    basics?.location ?? dto.location ?? dto.productLocation;
+
+  const niches =
+    (basics?.niche ? [basics.niche] : undefined) ?? dto.niches ?? [];
+
+  const creatorSizes =
+    (budget?.creatorSizes && budget.creatorSizes.length > 0
+      ? budget.creatorSizes
+      : undefined) ??
+    dto.creatorSizes ??
+    dto.budget?.creatorSizes ??
+    [];
+
+  const brief =
+    deliverables?.brandGuidelines ??
+    dto.brief ??
+    dto.requirements?.brandGuidelines;
+
+  const referenceUrls =
+    (Array.isArray(deliverables?.references)
+      ? deliverables?.references
+      : deliverables?.references
+        ? [deliverables.references]
+        : undefined) ??
+    dto.referenceUrls ??
+    (dto.requirements?.references
+      ? dto.requirements.references.split('\n').filter(Boolean)
+      : undefined) ??
+    [];
+
+  const hashtags = meta?.hashtags ?? dto.hashtags ?? [];
+
+  const deliverablesArray =
+    dto.deliverables && dto.deliverables.length > 0
+      ? dto.deliverables
+      : dto.requirements?.contentTypes?.map((c) => ({ type: c, count: 1 })) ??
+        [];
+
+  const proofOfWorkReq =
+    deliverables?.proofOfWorkRequired ??
+    meta?.proofOfWorkReq ??
+    dto.proofOfWorkReq ??
+    false;
+
+  const applicationDeadlineStr =
+    budget?.applicationDeadline ?? dto.timeline?.applicationDeadline ?? dto.deadline;
+  const workDeadlineStr =
+    budget?.workDeadline ?? dto.timeline?.workDeadline;
+  const scriptDeadlineStr =
+    budget?.scriptDeadline ?? dto.timeline?.scriptDeadline;
+
+  const applicationDeadline = applicationDeadlineStr
+    ? new Date(applicationDeadlineStr)
+    : undefined;
+  const workDeadline = workDeadlineStr ? new Date(workDeadlineStr) : undefined;
+  const scriptDeadline = scriptDeadlineStr ? new Date(scriptDeadlineStr) : undefined;
+
+  const thumbnailUrl = basics?.coverImageUrl ?? dto.thumbnailUrl;
+
+  const platform =
+    deliverables?.platform ?? dto.requirements?.platform;
+
+  const contentTypes =
+    deliverables?.contentTypes ??
+    dto.requirements?.contentTypes ??
+    [];
+
+  const postingType =
+    deliverables?.postingType ?? dto.requirements?.postingType;
+
+  const usageRights =
+    deliverables?.usageRights ?? undefined;
+
+  const scriptType =
+    deliverables?.scriptType ?? dto.requirements?.scriptType;
+
+  const scriptFlow =
+    deliverables?.scriptFlow ?? undefined;
+
+  const scriptFileKey =
+    deliverables?.scriptFileName ?? undefined;
+
+  const mixMode =
+    budget?.mixMode ?? dto.budget?.mixMode;
+
+  const selectedTier =
+    budget?.selectedTier ?? dto.budget?.selectedTier;
+
+  const productDetails =
+    budget?.productDetails ?? dto.budget?.productDetails;
+
+  const status =
+    meta?.status ?? dto.status ?? 'draft';
+
   const [campaign] = await db
     .insert(campaigns)
     .values({
       brandId: brandUser.brandId,
-      name: dto.name || '',
-      type: dto.type || 'influencer',
-      visibility: dto.visibility || 'private',
-      objective: dto.objective || dto.budget?.productDetails,
-      budgetMode: dto.budgetMode || dto.budget?.mode || 'paid',
-      budgetTierPricing: (dto.budgetTierPricing && dto.budgetTierPricing.length > 0)
-        ? dto.budgetTierPricing
-        : (dto.budget?.tierPricing?.map(t => ({ tier: t.tier, rate: t.amount })) || []),
-      budgetTotal: (dto.budgetTotal ?? dto.budget?.total)?.toString(),
-      platformFeePercent: (dto.platformFeePercent ?? dto.budget?.platformFeePercent)?.toString() || '10',
-      location: dto.location || dto.productLocation,
-      niches: dto.niches || [],
-      creatorSizes: (dto.creatorSizes && dto.creatorSizes.length > 0) ? dto.creatorSizes : (dto.budget?.creatorSizes || []),
-      brief: dto.brief || dto.requirements?.brandGuidelines,
+      name,
+      type,
+      visibility,
+      objective,
+      budgetMode,
+      budgetTierPricing,
+      budgetTotal,
+      platformFeePercent,
+      location,
+      niches,
+      creatorSizes,
+      brief,
       dos: dto.dos || [],
       donts: dto.donts || [],
-      referenceUrls: (dto.referenceUrls && dto.referenceUrls.length > 0) ? dto.referenceUrls : (dto.requirements?.references ? dto.requirements.references.split('\n').filter(Boolean) : []),
-      hashtags: dto.hashtags || [],
-      deliverables: (dto.deliverables && dto.deliverables.length > 0) ? dto.deliverables : (dto.requirements?.contentTypes?.map(c => ({ type: c, count: 1 })) || []),
-      proofOfWorkReq: dto.proofOfWorkReq || false,
-      deadline: dto.deadline ? new Date(dto.deadline) : (dto.timeline?.applicationDeadline ? new Date(dto.timeline.applicationDeadline) : undefined),
-      status: dto.status || 'draft',
+      referenceUrls,
+      hashtags,
+      deliverables: deliverablesArray,
+      proofOfWorkReq,
+      deadline: applicationDeadline,
+      applicationDeadline,
+      workDeadline,
+      scriptDeadline,
+      thumbnailUrl,
+      platform,
+      contentTypes,
+      postingType,
+      usageRights,
+      scriptType,
+      scriptFlow,
+      scriptFileKey,
+      mixMode,
+      selectedTier,
+      productDetails,
+      status,
     })
     .returning();
 
@@ -167,6 +326,126 @@ export async function updateCampaign(
   }
 
   const mappedUpdate: any = {};
+
+  const basics = dto.basics;
+  const deliverables = dto.deliverables;
+  const budget = dto.budget;
+  const meta = dto.meta;
+
+  // ─── New structured payload fields (basics / deliverables / budget / meta) ───
+
+  // Basics
+  if (basics?.campaignName !== undefined) mappedUpdate.name = basics.campaignName;
+  if (basics?.type !== undefined) mappedUpdate.type = basics.type;
+  if (basics?.visibility !== undefined) mappedUpdate.visibility = basics.visibility;
+  if (
+    basics?.objective !== undefined ||
+    budget?.productDetails !== undefined
+  ) {
+    mappedUpdate.objective = basics?.objective ?? budget?.productDetails;
+  }
+  if (basics?.location !== undefined) mappedUpdate.location = basics.location;
+  if (basics?.niche !== undefined) mappedUpdate.niches = [basics.niche];
+
+  // Deliverables / creative
+  if (deliverables?.brandGuidelines !== undefined) mappedUpdate.brief = deliverables.brandGuidelines;
+  if (deliverables?.references !== undefined) {
+    if (Array.isArray(deliverables.references)) {
+      mappedUpdate.referenceUrls = deliverables.references;
+    } else if (deliverables.references) {
+      mappedUpdate.referenceUrls = [deliverables.references];
+    } else {
+      mappedUpdate.referenceUrls = [];
+    }
+  }
+  if (meta?.referenceUrls !== undefined) mappedUpdate.referenceUrls = meta.referenceUrls;
+  if (meta?.hashtags !== undefined) mappedUpdate.hashtags = meta.hashtags;
+
+  if (deliverables?.proofOfWorkRequired !== undefined) {
+    mappedUpdate.proofOfWorkReq = deliverables.proofOfWorkRequired;
+  }
+  if (meta?.proofOfWorkReq !== undefined) {
+    mappedUpdate.proofOfWorkReq = meta.proofOfWorkReq;
+  }
+
+  if (deliverables?.platform !== undefined) mappedUpdate.platform = deliverables.platform;
+  if (deliverables?.contentTypes !== undefined) mappedUpdate.contentTypes = deliverables.contentTypes;
+  if (deliverables?.postingType !== undefined) mappedUpdate.postingType = deliverables.postingType;
+  if (deliverables?.usageRights !== undefined) mappedUpdate.usageRights = deliverables.usageRights;
+  if (deliverables?.scriptType !== undefined) mappedUpdate.scriptType = deliverables.scriptType;
+  if (deliverables?.scriptFlow !== undefined) mappedUpdate.scriptFlow = deliverables.scriptFlow;
+  if (deliverables?.scriptFileName !== undefined) mappedUpdate.scriptFileKey = deliverables.scriptFileName || null;
+
+  // Budget
+  if (budget?.budgetMode !== undefined || dto.budgetMode !== undefined || dto.budget?.mode !== undefined) {
+    mappedUpdate.budgetMode = budget?.budgetMode ?? dto.budgetMode ?? dto.budget?.mode;
+  }
+  if (budget?.tierConfig !== undefined || dto.budgetTierPricing?.length || dto.budget?.tierPricing) {
+    if (budget?.tierConfig) {
+      mappedUpdate.budgetTierPricing = budget.tierConfig.map((t) => ({ tier: t.tier, rate: t.amount }));
+    } else if (dto.budgetTierPricing?.length) {
+      mappedUpdate.budgetTierPricing = dto.budgetTierPricing;
+    } else if (dto.budget?.tierPricing) {
+      mappedUpdate.budgetTierPricing = dto.budget.tierPricing.map((t) => ({ tier: t.tier, rate: t.amount }));
+    }
+  }
+  if (budget?.totalBudget !== undefined || dto.budgetTotal !== undefined || dto.budget?.total !== undefined) {
+    mappedUpdate.budgetTotal = (budget?.totalBudget ?? dto.budgetTotal ?? dto.budget?.total)?.toString();
+  }
+  if (
+    budget?.platformFeePercent !== undefined ||
+    dto.platformFeePercent !== undefined ||
+    dto.budget?.platformFeePercent !== undefined
+  ) {
+    mappedUpdate.platformFeePercent = (
+      budget?.platformFeePercent ??
+      dto.platformFeePercent ??
+      dto.budget?.platformFeePercent
+    )?.toString();
+  }
+
+  if (budget?.creatorSizes !== undefined || dto.creatorSizes?.length || dto.budget?.creatorSizes) {
+    mappedUpdate.creatorSizes =
+      budget?.creatorSizes ??
+      (dto.creatorSizes?.length ? dto.creatorSizes : dto.budget?.creatorSizes) ??
+      [];
+  }
+
+  if (budget?.mixMode !== undefined || dto.budget?.mixMode !== undefined) {
+    mappedUpdate.mixMode = budget?.mixMode ?? dto.budget?.mixMode;
+  }
+  if (budget?.selectedTier !== undefined || dto.budget?.selectedTier !== undefined) {
+    mappedUpdate.selectedTier = budget?.selectedTier ?? dto.budget?.selectedTier;
+  }
+  if (budget?.productDetails !== undefined || dto.budget?.productDetails !== undefined) {
+    mappedUpdate.productDetails = budget?.productDetails ?? dto.budget?.productDetails;
+  }
+
+  if (budget?.applicationDeadline || dto.timeline?.applicationDeadline || dto.deadline) {
+    const dl = budget?.applicationDeadline ?? dto.timeline?.applicationDeadline ?? dto.deadline;
+    mappedUpdate.deadline = dl ? new Date(dl) : null;
+    mappedUpdate.applicationDeadline = dl ? new Date(dl) : null;
+  }
+  if (budget?.workDeadline || dto.timeline?.workDeadline) {
+    const wd = budget?.workDeadline ?? dto.timeline?.workDeadline;
+    mappedUpdate.workDeadline = wd ? new Date(wd) : null;
+  }
+  if (budget?.scriptDeadline || dto.timeline?.scriptDeadline) {
+    const sd = budget?.scriptDeadline ?? dto.timeline?.scriptDeadline;
+    mappedUpdate.scriptDeadline = sd ? new Date(sd) : null;
+  }
+
+  // Thumbnail
+  if (basics?.coverImageUrl !== undefined || (dto as any).thumbnailUrl !== undefined) {
+    mappedUpdate.thumbnailUrl = basics?.coverImageUrl ?? (dto as any).thumbnailUrl;
+  }
+
+  // Status (meta or legacy)
+  if (meta?.status !== undefined || dto.status !== undefined) {
+    mappedUpdate.status = meta?.status ?? dto.status;
+  }
+
+  // Legacy for backward compatibility (kept below)
   if (dto.name !== undefined) mappedUpdate.name = dto.name;
   if (dto.type !== undefined) mappedUpdate.type = dto.type;
   if (dto.visibility !== undefined) mappedUpdate.visibility = dto.visibility;

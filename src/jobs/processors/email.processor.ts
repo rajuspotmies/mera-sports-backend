@@ -1,58 +1,80 @@
 import { Job } from 'bull';
-import nodemailer from 'nodemailer';
 import { db } from '@/db';
 import { users } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 import { env } from '@/config/env';
 import { AppError } from '@/shared/errors';
+import { logger } from '@/shared/utils/logger';
 
-let transporter: nodemailer.Transporter | null = null;
+const EMAIL_FROM = env.EMAIL_FROM || 'Mutiny Maker <notifications@mutinytalent.com>';
 
-function getTransporter() {
-    if (!transporter) {
-        if (!env.SMTP_HOST) {
-            console.warn('SMTP_HOST not configured, falling back to mock transporter');
-        }
-        transporter = nodemailer.createTransport({
-            host: env.SMTP_HOST || 'smtp.localhost',
-            port: env.SMTP_PORT || 1025,
-            auth: {
-                user: env.SMTP_USER || 'test',
-                pass: env.SMTP_PASS || 'test',
-            },
-        });
-    }
-    return transporter;
-}
-
-function renderEmailTemplate(type: string, data: any) {
-    return `
+function renderEmailTemplate(_type: string, data: { title: string; message: string; userName: string }) {
+  return `
     <html>
-      <body>
-        <h1>${data.title}</h1>
+      <body style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <h2 style="color: #1a1a1a;">${data.title}</h2>
         <p>Hi ${data.userName},</p>
         <p>${data.message}</p>
-        <p>Thanks,<br/>Mutiny Maker Team</p>
+        <br/>
+        <p style="color: #666;">Thanks,<br/>Mutiny Maker Team</p>
       </body>
     </html>
   `;
 }
 
+async function sendViaResend(to: string, subject: string, html: string) {
+  const { Resend } = await import('resend');
+  const resend = new Resend(env.SMTP_API_KEY);
+
+  const { error } = await resend.emails.send({
+    from: EMAIL_FROM,
+    to,
+    subject,
+    html,
+  });
+
+  if (error) {
+    throw new AppError('EMAIL_SEND_FAILED', `Resend error: ${error.message}`);
+  }
+}
+
+async function sendViaSMTP(to: string, subject: string, html: string) {
+  const nodemailer = await import('nodemailer');
+
+  const transporter = nodemailer.default.createTransport({
+    host: env.SMTP_HOST || 'smtp.resend.com',
+    port: env.SMTP_PORT || 465,
+    secure: (env.SMTP_PORT ?? 465) === 465,
+    auth: {
+      user: env.SMTP_USER || 'resend',
+      pass: env.SMTP_PASS || env.SMTP_API_KEY || '',
+    },
+  });
+
+  await transporter.sendMail({ from: EMAIL_FROM, to, subject, html });
+}
+
 export async function processEmailJob(job: Job) {
-    const { userId, type, title, message } = job.data;
+  const { userId, type, title, message } = job.data;
 
-    const [user] = await db.select().from(users).where(eq(users.id, userId));
+  const [user] = await db.select().from(users).where(eq(users.id, userId));
 
-    if (!user) {
-        throw new AppError('NOT_FOUND', `User ${userId} not found for email job`);
-    }
+  if (!user) {
+    throw new AppError('NOT_FOUND', `User ${userId} not found for email job`);
+  }
 
-    const mailer = getTransporter();
+  if (!user.email) {
+    logger.warn(`User ${userId} has no email, skipping email notification`);
+    return;
+  }
 
-    await mailer.sendMail({
-        from: '"Mutiny Maker" <notifications@mutinymaker.com>',
-        to: user.email,
-        subject: title,
-        html: renderEmailTemplate(type, { title, message, userName: user.name }),
-    });
+  const html = renderEmailTemplate(type, { title, message, userName: user.name || 'there' });
+
+  if (env.SMTP_API_KEY) {
+    await sendViaResend(user.email, title, html);
+  } else if (env.SMTP_HOST) {
+    await sendViaSMTP(user.email, title, html);
+  } else {
+    logger.warn('No email provider configured (set SMTP_API_KEY for Resend or SMTP_HOST for SMTP)');
+  }
 }

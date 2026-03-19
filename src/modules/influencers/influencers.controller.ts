@@ -30,12 +30,24 @@ export async function getInfluencerByIdHandler(req: Request, res: Response): Pro
   sendSuccess(res, result);
 }
 
-export async function inviteInfluencerHandler(req: Request, res: Response): Promise<void> {
-  const result = await influencersService.inviteInfluencer(req.user, req.body);
+export async function inviteInfluencersHandler(req: Request, res: Response): Promise<void> {
+  const result = await influencersService.inviteInfluencers(req.user, req.body);
   sendSuccess(res, result, 201);
 }
 
-export async function bulkInviteHandler(req: Request, res: Response): Promise<void> {
-  const result = await influencersService.bulkInviteInfluencers(req.user, req.body);
+// ─── Portfolio ───────────────────────────────────────────────────────────────
+
+export async function addPortfolioItemHandler(req: Request, res: Response): Promise<void> {
+  const result = await influencersService.addPortfolioItem(req.user.sub, req.body);
+  sendSuccess(res, result, 201);
+}
+
+export async function updatePortfolioItemHandler(req: Request, res: Response): Promise<void> {
+  const result = await influencersService.updatePortfolioItem(req.user.sub, req.params.itemId, req.body);
   sendSuccess(res, result);
+}
+
+export async function deletePortfolioItemHandler(req: Request, res: Response): Promise<void> {
+  await influencersService.deletePortfolioItem(req.user.sub, req.params.itemId);
+  sendSuccess(res, { message: 'Portfolio item deleted' });
 }

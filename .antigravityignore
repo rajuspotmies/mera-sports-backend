@@ -1,0 +1,33 @@
+# Dependencies (The biggest quota savers)
+node_modules/
+bower_components/
+
+# Build outputs
+dist/
+build/
+.next/
+out/
+
+# Version Control
+.git/
+.svn/
+.hg/
+
+# Environment and Logs
+.env
+*.log
+npm-debug.log*
+
+# Images and Media (AI doesn't need to "read" these as code)
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.svg
+*.mp4
+*.pdf
+
+# Cache and Temp files
+.cache/
+.eslintcache
+.DS_Store

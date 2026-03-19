@@ -87,6 +87,7 @@ export async function approveSubmission(subId: string, brandUser: JWTPayload) {
       ci: campaignInfluencers,
       influencerUserId: influencerProfiles.userId,
       campaignName: campaigns.name,
+      budgetMode: campaigns.budgetMode,
     })
     .from(campaignInfluencers)
     .innerJoin(influencerProfiles, eq(influencerProfiles.id, campaignInfluencers.influencerId))
@@ -95,7 +96,7 @@ export async function approveSubmission(subId: string, brandUser: JWTPayload) {
     .limit(1);
 
   if (!ciData) throw new NotFoundError('Campaign influencer');
-  const { ci, influencerUserId, campaignName } = ciData;
+  const { ci, influencerUserId, campaignName, budgetMode } = ciData;
 
   await assertBrandOwnsCampaign(ci.campaignId, brandUser);
 
@@ -105,17 +106,25 @@ export async function approveSubmission(subId: string, brandUser: JWTPayload) {
     .where(eq(workSubmissions.id, subId))
     .returning();
 
-  await db
-    .update(campaignInfluencers)
-    .set({ status: 'completed', completedAt: new Date(), updatedAt: new Date() })
-    .where(eq(campaignInfluencers.id, ci.id));
+  if (budgetMode === 'product') {
+    await db
+      .update(campaignInfluencers)
+      .set({ status: 'completed', completedAt: new Date(), updatedAt: new Date() })
+      .where(eq(campaignInfluencers.id, ci.id));
+  }
 
-  // ─── Notify the Influencer ───────────────────────────────────────────────
+  let notifMessage: string;
+  if (budgetMode === 'product') {
+    notifMessage = `Your final content for "${campaignName}" has been approved! Campaign completed.`;
+  } else {
+    notifMessage = `Your final content for "${campaignName}" has been approved! Final payment will be processed shortly.`;
+  }
+
   await createNotification({
     userId: influencerUserId,
     type: 'submission',
     title: 'Work Approved',
-    message: `Your final content for "${campaignName}" has been approved! Campaign completed.`,
+    message: notifMessage,
     campaignId: ci.campaignId,
     campaignName: campaignName,
     actionUrl: `/campaigns/${ci.campaignId}`,

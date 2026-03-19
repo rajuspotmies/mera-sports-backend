@@ -59,4 +59,20 @@ router.post(
   asyncHandler(ctrl.rejectApplicationHandler)
 );
 
+// Brand: mark product as shipped for an application
+router.post(
+  '/:appId/product-shipped',
+  authenticate(),
+  authorize('brand_owner', 'admin'),
+  asyncHandler(ctrl.markProductShippedHandler)
+);
+
+// Influencer: confirm product received
+router.post(
+  '/product-received',
+  authenticate(),
+  authorize('influencer'),
+  asyncHandler(ctrl.confirmProductReceivedHandler)
+);
+
 export default router;

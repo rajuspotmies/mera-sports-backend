@@ -11,6 +11,8 @@ const router = Router({ mergeParams: true });
 
 router.get('/', authenticate(), authorize('brand_owner', 'admin'), asyncHandler(ctrl.listScriptsHandler));
 
+router.get('/mine', authenticate(), authorize('influencer'), asyncHandler(ctrl.getMyScriptsHandler));
+
 router.post(
   '/',
   authenticate(),

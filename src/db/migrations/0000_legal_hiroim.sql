@@ -1,18 +1,93 @@
-CREATE TYPE "public"."budget_mode" AS ENUM('paid', 'product', 'paid_product');--> statement-breakpoint
-CREATE TYPE "public"."campaign_status" AS ENUM('draft', 'active', 'script', 'work', 'completed', 'closed', 'withdrawn');--> statement-breakpoint
-CREATE TYPE "public"."campaign_type" AS ENUM('influencer', 'ugc', 'meme', 'twitter');--> statement-breakpoint
-CREATE TYPE "public"."campaign_visibility" AS ENUM('private', 'public');--> statement-breakpoint
-CREATE TYPE "public"."ci_origin" AS ENUM('brand_invite', 'influencer_application');--> statement-breakpoint
-CREATE TYPE "public"."ci_status" AS ENUM('invited', 'applied', 'negotiating', 'accepted', 'payment_pending', 'paid', 'script_pending', 'script_review', 'work_pending', 'work_review', 'completed', 'rejected', 'withdrawn');--> statement-breakpoint
-CREATE TYPE "public"."conversation_status" AS ENUM('pending', 'active', 'archived');--> statement-breakpoint
-CREATE TYPE "public"."influencer_tier" AS ENUM('nano', 'micro', 'mid', 'macro', 'mega');--> statement-breakpoint
-CREATE TYPE "public"."message_sender_role" AS ENUM('brand', 'influencer', 'system');--> statement-breakpoint
-CREATE TYPE "public"."negotiation_party" AS ENUM('brand', 'influencer');--> statement-breakpoint
-CREATE TYPE "public"."notification_type" AS ENUM('application', 'script', 'submission', 'negotiation', 'payment', 'chat', 'system');--> statement-breakpoint
-CREATE TYPE "public"."payment_status" AS ENUM('pending_first', 'first_paid', 'pending_final', 'completed', 'refunded');--> statement-breakpoint
-CREATE TYPE "public"."script_status" AS ENUM('pending', 'approved', 'revision_requested');--> statement-breakpoint
-CREATE TYPE "public"."submission_status" AS ENUM('pending', 'approved', 'rejected');--> statement-breakpoint
-CREATE TYPE "public"."user_role" AS ENUM('brand_owner', 'influencer', 'admin');--> statement-breakpoint
+DO $$ BEGIN
+  CREATE TYPE "public"."budget_mode" AS ENUM('paid', 'product', 'paid_product');
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
+--> statement-breakpoint
+DO $$ BEGIN
+  CREATE TYPE "public"."campaign_status" AS ENUM('draft', 'active', 'script', 'work', 'completed', 'closed', 'withdrawn');
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
+--> statement-breakpoint
+DO $$ BEGIN
+  CREATE TYPE "public"."campaign_type" AS ENUM('influencer', 'ugc', 'meme', 'twitter');
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
+--> statement-breakpoint
+DO $$ BEGIN
+  CREATE TYPE "public"."campaign_visibility" AS ENUM('private', 'public');
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
+--> statement-breakpoint
+DO $$ BEGIN
+  CREATE TYPE "public"."ci_origin" AS ENUM('brand_invite', 'influencer_application');
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
+--> statement-breakpoint
+DO $$ BEGIN
+  CREATE TYPE "public"."ci_status" AS ENUM('invited', 'applied', 'negotiating', 'accepted', 'payment_pending', 'paid', 'script_pending', 'script_review', 'work_pending', 'work_review', 'completed', 'rejected', 'withdrawn');
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
+--> statement-breakpoint
+DO $$ BEGIN
+  CREATE TYPE "public"."conversation_status" AS ENUM('pending', 'active', 'archived');
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
+--> statement-breakpoint
+DO $$ BEGIN
+  CREATE TYPE "public"."influencer_tier" AS ENUM('nano', 'micro', 'mid', 'macro', 'mega');
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
+--> statement-breakpoint
+DO $$ BEGIN
+  CREATE TYPE "public"."message_sender_role" AS ENUM('brand', 'influencer', 'system');
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
+--> statement-breakpoint
+DO $$ BEGIN
+  CREATE TYPE "public"."negotiation_party" AS ENUM('brand', 'influencer');
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
+--> statement-breakpoint
+DO $$ BEGIN
+  CREATE TYPE "public"."notification_type" AS ENUM('application', 'script', 'submission', 'negotiation', 'payment', 'chat', 'system');
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
+--> statement-breakpoint
+DO $$ BEGIN
+  CREATE TYPE "public"."payment_status" AS ENUM('pending_first', 'first_paid', 'pending_final', 'completed', 'refunded');
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
+--> statement-breakpoint
+DO $$ BEGIN
+  CREATE TYPE "public"."script_status" AS ENUM('pending', 'approved', 'revision_requested');
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
+--> statement-breakpoint
+DO $$ BEGIN
+  CREATE TYPE "public"."submission_status" AS ENUM('pending', 'approved', 'rejected');
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
+--> statement-breakpoint
+DO $$ BEGIN
+  CREATE TYPE "public"."user_role" AS ENUM('brand_owner', 'influencer', 'admin');
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
+--> statement-breakpoint
 CREATE TABLE "users" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"email" varchar(255) NOT NULL,

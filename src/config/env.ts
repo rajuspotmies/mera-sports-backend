@@ -32,24 +32,44 @@ const envSchema = z.object({
   S3_BUCKET_NAME: z.string().default('mutiny-uploads'),
 
   // AI
-  AI_PROVIDER: z.enum(['anthropic', 'openai']).default('anthropic'),
+  AI_PROVIDER: z.enum(['anthropic', 'openai', 'azure']).default('anthropic'),
   ANTHROPIC_API_KEY: z.string().optional(),
   OPENAI_API_KEY: z.string().optional(),
+  AZURE_OPENAI_API_KEY: z.string().optional(),
+  AZURE_OPENAI_ENDPOINT: z.string().optional(),
+  AZURE_OPENAI_DEPLOYMENT: z.string().optional(),
+  AZURE_OPENAI_API_VERSION: z.string().default('2023-05-15'),
 
   // Payments
   RAZORPAY_KEY_ID: z.string().optional(),
   RAZORPAY_KEY_SECRET: z.string().optional(),
   RAZORPAY_WEBHOOK_SECRET: z.string().optional(),
 
-  // Email
+  // Email (Resend API preferred; SMTP as fallback)
+  SMTP_API_KEY: z.string().optional(),
   SMTP_HOST: z.string().optional(),
   SMTP_PORT: z.coerce.number().optional(),
   SMTP_USER: z.string().optional(),
   SMTP_PASS: z.string().optional(),
-  EMAIL_FROM: z.string().email().optional(),
+  EMAIL_FROM: z.string().optional(),
 
   // Logging
   LOG_LEVEL: z.enum(['error', 'warn', 'info', 'debug']).default('info'),
+
+  // Firebase / FCM (all optional; push notifications disabled if missing)
+  FIREBASE_PROJECT_ID: z.string().optional(),
+  FIREBASE_CLIENT_EMAIL: z.string().optional(),
+  FIREBASE_PRIVATE_KEY: z.string().optional(),
+
+  // WhatsApp
+  WHATSAPP_PHONE_NUMBER_ID: z.string().optional(),
+  WHATSAPP_ACCESS_TOKEN: z.string().optional(),
+  WHATSAPP_API_VERSION: z.string().default('v22.0'),
+  WHATSAPP_OTP_TEMPLATE_NAME: z.string().default('otp_verification'),
+
+  // App Store / Play Store review account (fixed OTP bypass)
+  REVIEW_ACCOUNT_PHONE: z.string().default('+911234567890'),
+  REVIEW_ACCOUNT_OTP: z.string().default('000000'),
 });
 
 const parsed = envSchema.safeParse(process.env);

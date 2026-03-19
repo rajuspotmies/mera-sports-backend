@@ -1,6 +1,6 @@
 import { eq, and, asc, sql } from 'drizzle-orm';
 import { db } from '@/db';
-import { negotiations, campaignInfluencers, campaigns, conversations, brandProfiles, influencerProfiles } from '@/db/schema';
+import { negotiations, campaignInfluencers, campaigns, brandProfiles, influencerProfiles } from '@/db/schema';
 import { createNotification } from '../notifications/notifications.service';
 import { NotFoundError, ForbiddenError, BadRequestError } from '@/shared/errors';
 import type { JWTPayload } from '@/shared/types/api';
@@ -136,15 +136,11 @@ export async function acceptOffer(
       platformFee: platformFee.toString(),
       firstPayment: firstPayment.toString(),
       finalPayment: finalPayment.toString(),
-      chatEnabled: true,
       acceptedAt: new Date(),
       updatedAt: new Date(),
     })
     .where(eq(campaignInfluencers.id, ci.id))
     .returning();
-
-  // Ensure conversation exists for chat
-  await ensureConversation(campaignId, ci.influencerId);
 
   // Increment creatorsAccepted if not already done
   if (!ci.acceptedAt) {
@@ -222,22 +218,3 @@ async function getCIAndVerifyAccess(
   return ci;
 }
 
-async function ensureConversation(campaignId: string, influencerId: string) {
-  const [campaign] = await db
-    .select({ brandId: campaigns.brandId })
-    .from(campaigns)
-    .where(eq(campaigns.id, campaignId))
-    .limit(1);
-
-  if (!campaign) return;
-
-  await db
-    .insert(conversations)
-    .values({
-      campaignId,
-      brandId: campaign.brandId,
-      influencerId,
-      status: 'active',
-    })
-    .onConflictDoNothing();
-}

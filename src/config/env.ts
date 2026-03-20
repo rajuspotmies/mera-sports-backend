@@ -56,6 +56,13 @@ const envSchema = z.object({
   // Logging
   LOG_LEVEL: z.enum(['error', 'warn', 'info', 'debug']).default('info'),
 
+  // Proxy trust (Express "trust proxy" value): true/false or hop count (e.g. "1", "2")
+  TRUST_PROXY: z.string().optional(),
+
+  // Auth cookie behavior for web clients
+  AUTH_COOKIE_SAMESITE: z.enum(['lax', 'strict', 'none']).default('lax'),
+  AUTH_COOKIE_DOMAIN: z.string().optional(),
+
   // Firebase / FCM (all optional; push notifications disabled if missing)
   FIREBASE_PROJECT_ID: z.string().optional(),
   FIREBASE_CLIENT_EMAIL: z.string().optional(),

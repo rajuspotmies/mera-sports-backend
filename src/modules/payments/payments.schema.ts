@@ -15,9 +15,3 @@ export const webhookSchema = z.object({
   event: z.string(),
   payload: z.any(),
 });
-
-export const verifyPaymentSchema = z.object({
-  razorpayOrderId: z.string(),
-  razorpayPaymentId: z.string(),
-  razorpaySignature: z.string(),
-});

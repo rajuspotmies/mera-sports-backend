@@ -18,6 +18,7 @@ router.post(
   asyncHandler(ctrl.initiatePaymentRoundHandler)
 );
 
+// Verify a successful Razorpay payment (Signature check)
 router.post(
   '/verify',
   authorize('brand_owner', 'admin'),

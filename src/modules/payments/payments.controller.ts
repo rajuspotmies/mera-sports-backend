@@ -38,6 +38,12 @@ export async function getPaymentRoundHandler(req: Request, res: Response) {
   sendSuccess(res, result);
 }
 
+export async function verifyPaymentHandler(req: Request, res: Response) {
+  const { campaignId } = req.params;
+  const result = await paymentsService.verifyPayment(campaignId, req.body, req.user);
+  sendSuccess(res, result);
+}
+
 export async function razorpayWebhookHandler(req: Request, res: Response) {
   const signature = req.headers['x-razorpay-signature'] as string;
 

@@ -23,6 +23,12 @@ import { razorpayWebhookHandler } from './modules/payments/payments.controller';
 export function createApp() {
   const app = express();
 
+  // In production, requests usually pass through a reverse proxy/load balancer.
+  // Trust first proxy so req.ip and rate limiter work with X-Forwarded-* headers.
+  if (env.NODE_ENV === 'production') {
+    app.set('trust proxy', 1);
+  }
+
   // ─── Security ─────────────────────────────────────────────────────────────
   app.use(
     helmet({

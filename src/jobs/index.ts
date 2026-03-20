@@ -6,7 +6,7 @@ import { logger } from '@/shared/utils/logger';
 export function startWorkers() {
     // Start consuming jobs with processors
     emailQueue.process(processEmailJob);
-    notificationQueue.process(processNotificationJob);
+    notificationQueue.process('process-notification', processNotificationJob);
 
     notificationQueue.on('completed', (job) => {
         logger.debug(`[Jobs] Notification completed: ${job.id}`);

@@ -9,8 +9,11 @@ export const scriptVersions = pgTable('script_versions', {
     .notNull()
     .references(() => campaignInfluencers.id, { onDelete: 'cascade' }),
   versionNumber: integer('version_number').notNull().default(1),
-  fileUrl: varchar('file_url', { length: 500 }).notNull(),
-  fileName: varchar('file_name', { length: 255 }).notNull(),
+  fileUrl: varchar('file_url', { length: 500 }),
+  fileName: varchar('file_name', { length: 255 }),
+  externalUrl: varchar('external_url', { length: 500 }),
+  textContent: text('text_content'),
+  mediaType: varchar('media_type', { length: 50 }),
   status: scriptStatusEnum('status').notNull().default('pending'),
   reviewNote: text('review_note'),
   submittedAt: timestamp('submitted_at', { withTimezone: true }).defaultNow().notNull(),

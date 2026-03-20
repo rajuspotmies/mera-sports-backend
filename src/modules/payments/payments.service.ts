@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import Razorpay from 'razorpay';
 import { env } from '@/config/env';
 import { db } from '@/db';
@@ -60,7 +61,8 @@ function getRazorpay() {
 export async function initiatePaymentRound(
   campaignId: string,
   brandUser: JWTPayload,
-  paymentType: 'advance' | 'final'
+  paymentType: 'advance' | 'final',
+  ciIdsSpec?: string[]
 ) {
   if (!brandUser.brandId) throw new ForbiddenError('Brand profile not found');
 
@@ -83,6 +85,17 @@ export async function initiatePaymentRound(
   // Advance: from accepted CIs. Final: from work_review (content approved, awaiting payment).
   const eligibleStatus = paymentType === 'advance' ? 'accepted' : 'work_review';
 
+  // Status conditions
+  const conditions = [
+    eq(campaignInfluencers.campaignId, campaignId),
+    eq(campaignInfluencers.status, eligibleStatus),
+  ];
+
+  // If specific IDs are requested, include them
+  if (ciIdsSpec && ciIdsSpec.length > 0) {
+    conditions.push(inArray(campaignInfluencers.id, ciIdsSpec));
+  }
+
   const eligibleCIs = await db
     .select({
       id: campaignInfluencers.id,
@@ -91,12 +104,7 @@ export async function initiatePaymentRound(
       influencerId: campaignInfluencers.influencerId,
     })
     .from(campaignInfluencers)
-    .where(
-      and(
-        eq(campaignInfluencers.campaignId, campaignId),
-        eq(campaignInfluencers.status, eligibleStatus)
-      )
-    );
+    .where(and(...conditions));
 
   if (eligibleCIs.length === 0) {
     throw new BadRequestError(
@@ -139,12 +147,21 @@ export async function initiatePaymentRound(
 
   // Create Razorpay order
   const rzp = getRazorpay();
-  const order = await rzp.orders.create({
-    amount: Math.round(totalAmount * 100), // paise
-    currency: 'INR',
-    receipt: `cp_${campaignId}_r${round}_${paymentType}`,
-    notes: { campaignId, round, paymentType },
-  });
+  let order;
+  try {
+    order = await rzp.orders.create({
+      amount: Math.round(totalAmount * 100), // paise
+      currency: 'INR',
+      // Razorpay receipt limit is 40 characters. UUID (36) + prefix/suffix exceeds this.
+      // We use a shorter identifier: round + type + first 8 of campaign ID.
+      receipt: `r${round}_${paymentType.substring(0, 3)}_${campaignId.split('-')[0]}`,
+      notes: { campaignId, round, paymentType },
+    });
+  } catch (err: any) {
+    // Log the specific Razorpay error message if possible
+    const errorMsg = err?.error?.description || err?.message || 'Razorpay order creation failed';
+    throw new AppError('PAYMENT_INIT_FAILED', errorMsg, 400);
+  }
 
   // Insert campaign_payments row
   const [payment] = await db
@@ -195,6 +212,49 @@ export async function initiatePaymentRound(
     },
   };
 }
+
+export async function verifyPayment(
+  campaignId: string,
+  dto: { razorpayOrderId: string; razorpayPaymentId: string; razorpaySignature: string },
+  requester: JWTPayload
+) {
+  // 1. Verify ownership
+  await assertBrandOwnsCampaign(campaignId, requester);
+
+  // 2. Compute signature
+  const secret = env.RAZORPAY_KEY_SECRET;
+  if (!secret) throw new AppError('CONFIG_ERROR', 'Razorpay secret missing');
+  
+  const body = dto.razorpayOrderId + "|" + dto.razorpayPaymentId;
+  const expectedSignature = crypto
+    .createHmac('sha256', secret)
+    .update(body)
+    .digest('hex');
+
+  if (expectedSignature !== dto.razorpaySignature) {
+    throw new AppError('PAYMENT_VERIFICATION_FAILED', 'Invalid payment signature');
+  }
+
+  // 3. Find the payment record to get round and type
+  const [payment] = await db
+    .select()
+    .from(campaignPayments)
+    .where(eq(campaignPayments.razorpayOrderId, dto.razorpayOrderId))
+    .limit(1);
+
+  if (!payment) throw new NotFoundError('Payment order not found');
+
+  // 4. Advance states (using existing helper)
+  await handleCampaignPaymentSuccess(
+    payment.campaignId,
+    payment.round,
+    payment.paymentType as any,
+    dto.razorpayPaymentId
+  );
+
+  return { success: true, paymentType: payment.paymentType };
+}
+
 
 // ─── Handle Razorpay webhook confirmation ────────────────────────────────────
 
@@ -436,4 +496,19 @@ export async function getPaymentRoundDetails(campaignId: string, paymentId: stri
     .where(eq(campaignPaymentItems.campaignPaymentId, paymentId));
 
   return { payment, items };
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+async function assertBrandOwnsCampaign(id: string, user: JWTPayload) {
+  const [campaign] = await db
+    .select({ id: campaigns.id, brandId: campaigns.brandId })
+    .from(campaigns)
+    .where(eq(campaigns.id, id))
+    .limit(1);
+
+  if (!campaign) throw new NotFoundError('Campaign');
+  if (user.role !== 'admin' && campaign.brandId !== user.brandId) {
+    throw new ForbiddenError('You do not own this campaign');
+  }
 }

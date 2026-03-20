@@ -8,9 +8,6 @@ import * as ctrl from './payments.controller';
 
 const router = Router({ mergeParams: true });
 
-// Webhook (no auth — Razorpay calls this)
-router.post('/webhook', asyncHandler(ctrl.razorpayWebhookHandler));
-
 router.use(authenticate());
 
 // Initiate a payment round for all accepted (unpaid) influencers

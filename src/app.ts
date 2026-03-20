@@ -17,6 +17,8 @@ import messagesRouter from './modules/messages/messages.router';
 import analyticsRouter from './modules/analytics/analytics.router';
 import aiRouter from './modules/ai/ai.router';
 import uploadsRouter from './modules/uploads/uploads.router';
+import { asyncHandler } from './shared/utils/asyncHandler';
+import { razorpayWebhookHandler } from './modules/payments/payments.controller';
 
 export function createApp() {
   const app = express();
@@ -61,6 +63,10 @@ export function createApp() {
   app.get('/health', (_req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
   });
+
+  // ─── Payment webhooks (no auth) ───────────────────────────────────────────
+  // Global webhook endpoint for Razorpay callbacks.
+  app.post('/api/v1/payments/webhook', asyncHandler(razorpayWebhookHandler));
 
   // ─── API routes ───────────────────────────────────────────────────────────
   app.use('/api/v1', apiLimiter);

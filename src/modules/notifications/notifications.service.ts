@@ -30,8 +30,14 @@ export async function createNotification(data: Omit<NewNotification, 'id' | 'cre
   // Real-time emission to the target user
   emitToUser(data.userId, 'NOTIFICATION', notification);
 
-  // Queue background tasks
-  await notificationQueue.add('process-notification', notification);
+  // Queue background tasks (production-grade async delivery path)
+  await notificationQueue.add('process-notification', notification, {
+    attempts: 3,
+    backoff: { type: 'exponential', delay: 2000 },
+    removeOnComplete: true,
+    removeOnFail: false,
+  });
+
   await emailQueue.add('send-email', {
     userId: data.userId,
     type: data.type,

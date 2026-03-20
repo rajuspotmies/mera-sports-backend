@@ -7,6 +7,22 @@ import type { JWTPayload } from './shared/types/api';
 
 let io: SocketIOServer;
 
+const ACCESS_COOKIES = [
+  'brand_owner_access_token',
+  'influencer_access_token',
+  'admin_access_token',
+] as const;
+
+function parseCookies(cookieHeader?: string): Record<string, string> {
+  if (!cookieHeader) return {};
+  return cookieHeader.split(';').reduce<Record<string, string>>((acc, part) => {
+    const [rawKey, ...rest] = part.trim().split('=');
+    if (!rawKey || rest.length === 0) return acc;
+    acc[rawKey] = decodeURIComponent(rest.join('='));
+    return acc;
+  }, {});
+}
+
 export function initSocketServer(httpServer: HttpServer): SocketIOServer {
   io = new SocketIOServer(httpServer, {
     cors: {
@@ -19,7 +35,16 @@ export function initSocketServer(httpServer: HttpServer): SocketIOServer {
 
   // JWT authentication for every WS connection
   io.use((socket, next) => {
-    const token = socket.handshake.auth?.token as string | undefined;
+    let token = socket.handshake.auth?.token as string | undefined;
+    if (!token) {
+      const cookies = parseCookies(socket.handshake.headers.cookie);
+      for (const key of ACCESS_COOKIES) {
+        if (cookies[key]) {
+          token = cookies[key];
+          break;
+        }
+      }
+    }
     if (!token) {
       return next(new Error('Unauthorized: no token provided'));
     }

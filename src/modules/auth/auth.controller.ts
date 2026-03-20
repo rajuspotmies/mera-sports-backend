@@ -8,11 +8,13 @@ type Role = 'brand_owner' | 'influencer' | 'admin';
 // ─── Cookie Configuration ────────────────────────────────────────────────────
 
 const isProduction = env.NODE_ENV === 'production';
+const cookieSameSite = isProduction ? (env.AUTH_COOKIE_SAMESITE || 'none') : 'lax';
 
 const baseCookieOptions: CookieOptions = {
   httpOnly: true,
   secure: isProduction,
-  sameSite: 'lax',
+  sameSite: cookieSameSite,
+  ...(env.AUTH_COOKIE_DOMAIN ? { domain: env.AUTH_COOKIE_DOMAIN } : {}),
   path: '/',                       // all cookies are sent on every request
 };
 

@@ -20,14 +20,25 @@ import uploadsRouter from './modules/uploads/uploads.router';
 import { asyncHandler } from './shared/utils/asyncHandler';
 import { razorpayWebhookHandler } from './modules/payments/payments.controller';
 
+function resolveTrustProxySetting(): boolean | number {
+  // Explicit env has highest priority so deployments can tune multi-proxy setups.
+  const raw = env.TRUST_PROXY?.trim();
+  if (raw) {
+    if (raw.toLowerCase() === 'true') return true;
+    if (raw.toLowerCase() === 'false') return false;
+    const hopCount = Number(raw);
+    if (Number.isInteger(hopCount) && hopCount >= 0) return hopCount;
+  }
+
+  // Sensible default for production behind one reverse proxy.
+  return env.NODE_ENV === 'production' ? 1 : false;
+}
+
 export function createApp() {
   const app = express();
 
-  // In production, requests usually pass through a reverse proxy/load balancer.
-  // Trust first proxy so req.ip and rate limiter work with X-Forwarded-* headers.
-  if (env.NODE_ENV === 'production') {
-    app.set('trust proxy', 1);
-  }
+  // Required for correct client IP extraction behind load balancers/CDNs.
+  app.set('trust proxy', resolveTrustProxySetting());
 
   // ─── Security ─────────────────────────────────────────────────────────────
   app.use(

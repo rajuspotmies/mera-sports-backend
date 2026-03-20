@@ -8,6 +8,7 @@ import { emitToUser } from '@/socket';
 
 import { createNotification } from '../notifications/notifications.service';
 
+/** Chat (start + send) only during script & work phases for this application */
 const CHAT_ALLOWED_STATUSES = [
   'script_pending',
   'script_review',

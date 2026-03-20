@@ -6,9 +6,23 @@ import { sendSuccess } from '@/shared/utils/response';
 
 export async function initiatePaymentRoundHandler(req: Request, res: Response) {
   const { campaignId } = req.params;
-  const { paymentType } = req.body;
+  const { paymentType, ciIds } = req.body;
 
-  const result = await paymentsService.initiatePaymentRound(campaignId, req.user, paymentType);
+  const result = await paymentsService.initiatePaymentRound(campaignId, req.user, paymentType, ciIds);
+  sendSuccess(res, result, 201);
+}
+
+export async function verifyPaymentHandler(req: Request, res: Response) {
+  const { campaignId } = req.params;
+  const { razorpayOrderId, razorpayPaymentId, razorpaySignature } = req.body;
+
+  const result = await paymentsService.verifyCampaignPayment(
+    campaignId,
+    req.user,
+    razorpayOrderId,
+    razorpayPaymentId,
+    razorpaySignature
+  );
   sendSuccess(res, result, 201);
 }
 
@@ -20,7 +34,7 @@ export async function getPaymentSummaryHandler(req: Request, res: Response) {
 
 export async function getPaymentRoundHandler(req: Request, res: Response) {
   const { campaignId, paymentId } = req.params;
-  const result = await paymentsService.getPaymentRoundDetails(campaignId, paymentId);
+  const result = await paymentsService.getPaymentRoundDetails(campaignId, paymentId, req.user);
   sendSuccess(res, result);
 }
 

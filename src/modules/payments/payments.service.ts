@@ -1,4 +1,5 @@
 import Razorpay from 'razorpay';
+import crypto from 'crypto';
 import { env } from '@/config/env';
 import { db } from '@/db';
 import {
@@ -39,6 +40,98 @@ async function advanceCIsAfterPayment(
   }
 }
 
+async function sendPaymentNotifications(
+  campaignId: string,
+  ciIds: string[],
+  paymentType: 'advance' | 'final'
+) {
+  if (!ciIds.length) return;
+
+  const ciDetails = await db
+    .select({
+      influencerUserId: influencerProfiles.userId,
+    })
+    .from(campaignInfluencers)
+    .innerJoin(influencerProfiles, eq(influencerProfiles.id, campaignInfluencers.influencerId))
+    .where(inArray(campaignInfluencers.id, ciIds));
+
+  const [campaign] = await db
+    .select({ name: campaigns.name })
+    .from(campaigns)
+    .where(eq(campaigns.id, campaignId))
+    .limit(1);
+
+  const campaignName = campaign?.name ?? 'Unknown Campaign';
+
+  for (const ci of ciDetails) {
+    const title = paymentType === 'advance' ? 'Payment Received' : 'Final Payment Received';
+    const message =
+      paymentType === 'advance'
+        ? `The advance payment for "${campaignName}" has been received. You can now start working!`
+        : `The final payment for "${campaignName}" has been received. Great job!`;
+
+    await createNotification({
+      userId: ci.influencerUserId,
+      type: 'payment',
+      title,
+      message,
+      campaignId,
+      campaignName,
+      actionUrl: `/campaigns/${campaignId}`,
+    });
+  }
+
+  const [brandData] = await db
+    .select({ brandUserId: brandProfiles.userId })
+    .from(campaigns)
+    .innerJoin(brandProfiles, eq(brandProfiles.id, campaigns.brandId))
+    .where(eq(campaigns.id, campaignId))
+    .limit(1);
+
+  if (brandData) {
+    const title = paymentType === 'advance' ? 'Payment Successful' : 'Final Payment Successful';
+    const message =
+      paymentType === 'advance'
+        ? `Your advance payment for campaign "${campaignName}" (${ciIds.length} influencer(s)) was processed successfully.`
+        : `Your final payment for campaign "${campaignName}" was processed successfully. Work is complete.`;
+
+    await createNotification({
+      userId: brandData.brandUserId,
+      type: 'payment',
+      title,
+      message,
+      campaignId,
+      campaignName,
+      actionUrl: `/campaigns/${campaignId}`,
+    });
+  }
+}
+
+async function assertBrandOwnsCampaign(campaignId: string, user: JWTPayload) {
+  if (user.role !== 'admin' && !user.brandId) {
+    throw new ForbiddenError('Brand profile not found');
+  }
+
+  const [campaign] = await db
+    .select({
+      id: campaigns.id,
+      name: campaigns.name,
+      brandId: campaigns.brandId,
+      platformFeePercent: campaigns.platformFeePercent,
+      budgetTotal: campaigns.budgetTotal,
+    })
+    .from(campaigns)
+    .where(eq(campaigns.id, campaignId))
+    .limit(1);
+
+  if (!campaign) throw new NotFoundError('Campaign');
+  if (user.role !== 'admin' && campaign.brandId !== user.brandId) {
+    throw new ForbiddenError('You do not own this campaign');
+  }
+
+  return campaign;
+}
+
 let razorpay: Razorpay | null = null;
 function getRazorpay() {
   if (!razorpay) {
@@ -60,30 +153,15 @@ function getRazorpay() {
 export async function initiatePaymentRound(
   campaignId: string,
   brandUser: JWTPayload,
-  paymentType: 'advance' | 'final'
+  paymentType: 'advance' | 'final',
+  ciIds?: string[]
 ) {
-  if (!brandUser.brandId) throw new ForbiddenError('Brand profile not found');
-
-  const [campaign] = await db
-    .select({
-      id: campaigns.id,
-      name: campaigns.name,
-      brandId: campaigns.brandId,
-      platformFeePercent: campaigns.platformFeePercent,
-    })
-    .from(campaigns)
-    .where(eq(campaigns.id, campaignId))
-    .limit(1);
-
-  if (!campaign) throw new NotFoundError('Campaign');
-  if (brandUser.role !== 'admin' && campaign.brandId !== brandUser.brandId) {
-    throw new ForbiddenError('You do not own this campaign');
-  }
+  const campaign = await assertBrandOwnsCampaign(campaignId, brandUser);
 
   // Advance: from accepted CIs. Final: from work_review (content approved, awaiting payment).
   const eligibleStatus = paymentType === 'advance' ? 'accepted' : 'work_review';
 
-  const eligibleCIs = await db
+  let eligibleCIs = await db
     .select({
       id: campaignInfluencers.id,
       agreedBudget: campaignInfluencers.agreedBudget,
@@ -98,11 +176,16 @@ export async function initiatePaymentRound(
       )
     );
 
+  if (ciIds?.length) {
+    const selectedSet = new Set(ciIds);
+    eligibleCIs = eligibleCIs.filter((ci) => selectedSet.has(ci.id));
+  }
+
   if (eligibleCIs.length === 0) {
     throw new BadRequestError(
       paymentType === 'advance'
-        ? 'No accepted influencers to pay. Ensure influencers have accepted their offers first.'
-        : 'No influencers with completed work review to make final payment for.'
+        ? 'No eligible accepted influencers found for selected payment.'
+        : 'No eligible work_review influencers found for selected payment.'
     );
   }
 
@@ -142,7 +225,7 @@ export async function initiatePaymentRound(
   const order = await rzp.orders.create({
     amount: Math.round(totalAmount * 100), // paise
     currency: 'INR',
-    receipt: `cp_${campaignId}_r${round}_${paymentType}`,
+    receipt: `r${round}_${paymentType}_${campaignId.split('-')[0]}`,
     notes: { campaignId, round, paymentType },
   });
 
@@ -173,11 +256,11 @@ export async function initiatePaymentRound(
   }
 
   // Move CIs to payment_pending
-  const ciIds = eligibleCIs.map((ci) => ci.id);
+  const selectedCiIds = eligibleCIs.map((ci) => ci.id);
   await db
     .update(campaignInfluencers)
     .set({ status: 'payment_pending', updatedAt: new Date() })
-    .where(inArray(campaignInfluencers.id, ciIds));
+    .where(inArray(campaignInfluencers.id, selectedCiIds));
 
   return {
     paymentId: payment.id,
@@ -258,82 +341,125 @@ export async function handleCampaignPaymentSuccess(
       .where(inArray(campaignInfluencers.id, ciIds));
   }
 
-  // Notify influencers
-  const ciDetails = await db
-    .select({
-      ciId: campaignInfluencers.id,
-      influencerUserId: influencerProfiles.userId,
-    })
-    .from(campaignInfluencers)
-    .innerJoin(influencerProfiles, eq(influencerProfiles.id, campaignInfluencers.influencerId))
-    .where(inArray(campaignInfluencers.id, ciIds));
+  await sendPaymentNotifications(campaignId, ciIds, paymentType);
+}
 
-  const [campaign] = await db
-    .select({ name: campaigns.name })
-    .from(campaigns)
-    .where(eq(campaigns.id, campaignId))
-    .limit(1);
+export async function verifyCampaignPayment(
+  campaignId: string,
+  requester: JWTPayload,
+  razorpayOrderId: string,
+  razorpayPaymentId: string,
+  razorpaySignature: string
+) {
+  await assertBrandOwnsCampaign(campaignId, requester);
 
-  const campaignName = campaign?.name ?? 'Unknown Campaign';
-
-  for (const ci of ciDetails) {
-    const title = paymentType === 'advance' ? 'Payment Received' : 'Final Payment Received';
-    const message = paymentType === 'advance'
-      ? `The advance payment for "${campaignName}" has been received. You can now start working!`
-      : `The final payment for "${campaignName}" has been received. Great job!`;
-
-    await createNotification({
-      userId: ci.influencerUserId,
-      type: 'payment',
-      title,
-      message,
-      campaignId,
-      campaignName,
-      actionUrl: `/campaigns/${campaignId}`,
-    });
+  if (!env.RAZORPAY_KEY_SECRET) {
+    throw new AppError('PAYMENT_CONFIG_MISSING', 'Razorpay secret is not configured');
   }
 
-  // Notify brand
-  const [brandData] = await db
-    .select({ brandUserId: brandProfiles.userId })
-    .from(campaigns)
-    .innerJoin(brandProfiles, eq(brandProfiles.id, campaigns.brandId))
-    .where(eq(campaigns.id, campaignId))
+  const computedSignature = crypto
+    .createHmac('sha256', env.RAZORPAY_KEY_SECRET)
+    .update(`${razorpayOrderId}|${razorpayPaymentId}`)
+    .digest('hex');
+
+  const providedBuffer = Buffer.from(razorpaySignature);
+  const expectedBuffer = Buffer.from(computedSignature);
+  if (
+    providedBuffer.length !== expectedBuffer.length ||
+    !crypto.timingSafeEqual(providedBuffer, expectedBuffer)
+  ) {
+    throw new BadRequestError('Invalid Razorpay signature');
+  }
+
+  const [payment] = await db
+    .select()
+    .from(campaignPayments)
+    .where(
+      and(
+        eq(campaignPayments.razorpayOrderId, razorpayOrderId),
+        eq(campaignPayments.campaignId, campaignId)
+      )
+    )
     .limit(1);
 
-  if (brandData) {
-    const title = paymentType === 'advance' ? 'Payment Successful' : 'Final Payment Successful';
-    const message = paymentType === 'advance'
-      ? `Your advance payment for campaign "${campaignName}" (${ciIds.length} influencer(s)) was processed successfully.`
-      : `Your final payment for campaign "${campaignName}" was processed successfully. Work is complete.`;
-
-    await createNotification({
-      userId: brandData.brandUserId,
-      type: 'payment',
-      title,
-      message,
-      campaignId,
-      campaignName,
-      actionUrl: `/campaigns/${campaignId}`,
-    });
+  if (!payment) {
+    throw new NotFoundError('Campaign payment record');
   }
+
+  if (payment.status === 'captured') {
+    return { message: 'Payment already verified', paymentId: payment.id, status: payment.status };
+  }
+
+  if (payment.status !== 'pending') {
+    throw new BadRequestError(`Cannot verify payment in "${payment.status}" state`);
+  }
+
+  await db.transaction(async (tx) => {
+    await tx
+      .update(campaignPayments)
+      .set({
+        status: 'captured',
+        razorpayPaymentId,
+        capturedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(campaignPayments.id, payment.id));
+
+    const items = await tx
+      .select({ campaignInfluencerId: campaignPaymentItems.campaignInfluencerId })
+      .from(campaignPaymentItems)
+      .where(eq(campaignPaymentItems.campaignPaymentId, payment.id));
+
+    const selectedCiIds = items.map((i) => i.campaignInfluencerId);
+    if (!selectedCiIds.length) return;
+
+    if (payment.paymentType === 'advance') {
+      await tx
+        .update(campaignInfluencers)
+        .set({ status: 'paid', paidAt: new Date(), updatedAt: new Date() })
+        .where(inArray(campaignInfluencers.id, selectedCiIds));
+
+      const [campaign] = await tx
+        .select({ scriptType: campaigns.scriptType })
+        .from(campaigns)
+        .where(eq(campaigns.id, campaignId))
+        .limit(1);
+
+      const nextStatus = campaign?.scriptType === 'creator' ? 'script_pending' : 'work_pending';
+      await tx
+        .update(campaignInfluencers)
+        .set({ status: nextStatus, updatedAt: new Date() })
+        .where(inArray(campaignInfluencers.id, selectedCiIds));
+    } else {
+      await tx
+        .update(campaignInfluencers)
+        .set({
+          status: 'completed',
+          finalPaidAt: new Date(),
+          completedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(inArray(campaignInfluencers.id, selectedCiIds));
+    }
+  });
+
+  const items = await db
+    .select({ campaignInfluencerId: campaignPaymentItems.campaignInfluencerId })
+    .from(campaignPaymentItems)
+    .where(eq(campaignPaymentItems.campaignPaymentId, payment.id));
+  await sendPaymentNotifications(
+    campaignId,
+    items.map((i) => i.campaignInfluencerId),
+    payment.paymentType as 'advance' | 'final'
+  );
+
+  return { message: 'Payment verified and captured successfully', paymentId: payment.id, status: 'captured' };
 }
 
 // ─── Get payment summary for a campaign ──────────────────────────────────────
 
 export async function getCampaignPaymentSummary(campaignId: string, requester: JWTPayload) {
-  const [campaign] = await db
-    .select({
-      id: campaigns.id,
-      brandId: campaigns.brandId,
-      platformFeePercent: campaigns.platformFeePercent,
-      budgetTotal: campaigns.budgetTotal,
-    })
-    .from(campaigns)
-    .where(eq(campaigns.id, campaignId))
-    .limit(1);
-
-  if (!campaign) throw new NotFoundError('Campaign');
+  const campaign = await assertBrandOwnsCampaign(campaignId, requester);
 
   // All payment rounds
   const paymentRounds = await db
@@ -407,7 +533,8 @@ export async function getCampaignPaymentSummary(campaignId: string, requester: J
 
 // ─── Get payment round details ──────────────────────────────────────────────
 
-export async function getPaymentRoundDetails(campaignId: string, paymentId: string) {
+export async function getPaymentRoundDetails(campaignId: string, paymentId: string, requester: JWTPayload) {
+  await assertBrandOwnsCampaign(campaignId, requester);
   const [payment] = await db
     .select()
     .from(campaignPayments)

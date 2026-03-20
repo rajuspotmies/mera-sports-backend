@@ -3,7 +3,7 @@ import { authenticate } from '@/middleware/authenticate';
 import { authorize } from '@/middleware/authorize';
 import { validate } from '@/middleware/validate';
 import { asyncHandler } from '@/shared/utils/asyncHandler';
-import { initiatePaymentRoundSchema } from './payments.schema';
+import { initiatePaymentRoundSchema, verifyPaymentSchema } from './payments.schema';
 import * as ctrl from './payments.controller';
 
 const router = Router({ mergeParams: true });
@@ -16,6 +16,13 @@ router.post(
   authorize('brand_owner', 'admin'),
   validate({ body: initiatePaymentRoundSchema }),
   asyncHandler(ctrl.initiatePaymentRoundHandler)
+);
+
+router.post(
+  '/verify',
+  authorize('brand_owner', 'admin'),
+  validate({ body: verifyPaymentSchema }),
+  asyncHandler(ctrl.verifyPaymentHandler)
 );
 
 // Payment summary: rounds, amounts, eligible counts

@@ -12,6 +12,15 @@ export async function listApplicationsHandler(req: Request, res: Response): Prom
   sendSuccess(res, applications, 200, meta);
 }
 
+export async function getStatusBoardHandler(req: Request, res: Response): Promise<void> {
+  const { applications, meta } = await appService.getStatusBoard(
+    req.params.campaignId,
+    req.user,
+    req.query as never
+  );
+  sendSuccess(res, applications, 200, meta);
+}
+
 export async function applyToCampaignHandler(req: Request, res: Response): Promise<void> {
   const result = await appService.applyToCampaign(req.params.campaignId, req.user, req.body);
   sendCreated(res, result);

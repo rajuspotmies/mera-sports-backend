@@ -1,6 +1,6 @@
 import { eq, and } from 'drizzle-orm';
 import { db } from '@/db';
-import { workSubmissions, campaignInfluencers, campaigns, brandProfiles, influencerProfiles } from '@/db/schema';
+import { workSubmissions, campaignInfluencers, campaigns, brandProfiles, influencerProfiles, users } from '@/db/schema';
 import { createNotification } from '../notifications/notifications.service';
 import { NotFoundError, ForbiddenError, BadRequestError } from '@/shared/errors';
 import type { JWTPayload } from '@/shared/types/api';
@@ -9,12 +9,26 @@ export async function listSubmissions(campaignId: string, brandUser: JWTPayload)
   await assertBrandOwnsCampaign(campaignId, brandUser);
 
   const rows = await db
-    .select()
+    .select({
+      submission: workSubmissions,
+      ci: campaignInfluencers,
+      influencerName: users.name,
+      influencerHandle: influencerProfiles.handle,
+      influencerAvatar: users.avatarUrl,
+    })
     .from(workSubmissions)
     .innerJoin(campaignInfluencers, eq(campaignInfluencers.id, workSubmissions.campaignInfluencerId))
+    .innerJoin(influencerProfiles, eq(influencerProfiles.id, campaignInfluencers.influencerId))
+    .innerJoin(users, eq(users.id, influencerProfiles.userId))
     .where(eq(campaignInfluencers.campaignId, campaignId));
 
-  return rows.map((r) => ({ ...r.work_submissions, ci: r.campaign_influencers }));
+  return rows.map((r) => ({
+    ...r.submission,
+    ci: r.ci,
+    influencerName: r.influencerName,
+    influencerHandle: r.influencerHandle,
+    influencerAvatar: r.influencerAvatar,
+  }));
 }
 
 export async function submitWork(

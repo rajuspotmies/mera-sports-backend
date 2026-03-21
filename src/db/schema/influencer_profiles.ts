@@ -30,6 +30,9 @@ export const influencerProfiles = pgTable('influencer_profiles', {
   // { instagram_reel: 5000, youtube_video: 15000 }
   rateCard: jsonb('rate_card').$type<Record<string, number>>().default({}).notNull(),
   portfolioUrls: text('portfolio_urls').array().default([]).notNull(),
+  acceptingCollabs: boolean('accepting_collabs').default(true).notNull(),
+  featuredPortfolioIds: uuid('featured_portfolio_ids').array().default([]).notNull(),
+  settings: jsonb('settings').$type<Record<string, boolean | string | number>>().default({}).notNull(),
   isVerified: boolean('is_verified').default(false).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),

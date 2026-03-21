@@ -440,6 +440,51 @@ export async function verifyCampaignPayment(
           updatedAt: new Date(),
         })
         .where(inArray(campaignInfluencers.id, selectedCiIds));
+
+      // Check if ALL influencers in this campaign are now in a terminal state
+      // Terminal states: completed, settled, rejected, withdrawn
+      const [remaining] = await tx
+        .select({ count: sql<number>`count(*)::int` })
+        .from(campaignInfluencers)
+        .where(
+          and(
+            eq(campaignInfluencers.campaignId, campaignId),
+            sql`${campaignInfluencers.status} NOT IN ('completed', 'settled', 'rejected', 'withdrawn')`
+          )
+        );
+
+      if (remaining.count === 0) {
+        // All influencers are done! Auto-complete the campaign
+        const [updatedCampaign] = await tx
+          .update(campaigns)
+          .set({
+            status: 'completed',
+            updatedAt: new Date(),
+          })
+          .where(and(eq(campaigns.id, campaignId), sql`${campaigns.status} != 'closed'`))
+          .returning();
+
+        if (updatedCampaign) {
+          // Notify brand owner about campaign completion
+          const [brand] = await tx
+            .select({ userId: brandProfiles.userId })
+            .from(brandProfiles)
+            .where(eq(brandProfiles.id, updatedCampaign.brandId))
+            .limit(1);
+
+          if (brand) {
+            await createNotification({
+              userId: brand.userId,
+              type: 'system',
+              title: 'Campaign Completed!',
+              message: `All influencers have finished their work for "${updatedCampaign.name}". Your campaign is now marked as completed.`,
+              campaignId,
+              campaignName: updatedCampaign.name,
+              actionUrl: `/campaigns/${campaignId}`,
+            });
+          }
+        }
+      }
     }
   });
 

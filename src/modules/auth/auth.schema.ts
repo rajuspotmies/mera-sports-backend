@@ -27,6 +27,7 @@ export const logoutSchema = z.object({
 
 export const updateMeSchema = z.object({
   name: z.string().min(2).max(255).optional(),
+  email: z.string().email().optional(),
 });
 
 export const sendOtpSchema = z.object({

@@ -1,4 +1,4 @@
-import { eq, and, sql } from 'drizzle-orm';
+import { eq, and, sql, inArray } from 'drizzle-orm';
 import { db } from '@/db';
 import {
   campaignInfluencers,
@@ -32,8 +32,14 @@ export async function listApplications(
   const { page, limit } = parsePagination(query);
   const offset = getOffset({ page, limit });
 
-  const conditions = [eq(campaignInfluencers.campaignId, campaignId)];
-  if (query.status) conditions.push(eq(campaignInfluencers.status, query.status));
+  const conditions: any[] = [eq(campaignInfluencers.campaignId, campaignId)];
+  if (query.status) {
+    conditions.push(eq(campaignInfluencers.status, query.status));
+  } else {
+    // Only return applications/invites that have not progressed solidly into execution
+    const earlyStatuses = ['invited', 'applied', 'negotiating', 'accepted', 'rejected', 'withdrawn'];
+    conditions.push(inArray(campaignInfluencers.status, earlyStatuses as any));
+  }
 
   const where = and(...conditions);
 

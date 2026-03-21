@@ -367,6 +367,7 @@ export async function updateMe(userId: string, dto: UpdateMeDTO) {
 
   const updateData: Partial<typeof users.$inferInsert> = { updatedAt: new Date() };
   if (dto.name !== undefined) updateData.name = dto.name;
+  if (dto.email !== undefined) updateData.email = dto.email;
 
   const [updated] = await db
     .update(users)

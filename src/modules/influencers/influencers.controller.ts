@@ -15,7 +15,7 @@ export async function updateOwnProfileHandler(req: Request, res: Response): Prom
 
 export async function uploadAvatarHandler(req: Request, res: Response): Promise<void> {
   if (!req.file) throw new BadRequestError('No file uploaded');
-  const fileUrl = (req.file as any).location || (req.file as any).key; // Fallbacks for multer-s3 compatibility
+  const fileUrl = (req.file as any).key; // Always store S3 key; frontend resolves via /uploads/ proxy
   const result = await influencersService.updateInfluencerAvatar(req.user.sub, fileUrl);
   sendSuccess(res, result);
 }

@@ -20,7 +20,16 @@ export async function listSubmissions(campaignId: string, brandUser: JWTPayload)
 export async function submitWork(
   campaignId: string,
   influencerUser: JWTPayload,
-  dto: { type: string; url: string; proofOfWorkUrl?: string }
+  dto: {
+    type: string;
+    url?: string;
+    externalUrl?: string;
+    textContent?: string;
+    proofOfWorkUrl?: string;
+    mediaUrl?: string;
+    mediaType?: string;
+    fileName?: string;
+  }
 ) {
   if (!influencerUser.influencerId) throw new ForbiddenError('Influencer profile not found');
 
@@ -48,12 +57,24 @@ export async function submitWork(
     throw new BadRequestError(`Cannot submit work when status is '${ci.status}'`);
   }
 
+  const existing = await db
+    .select({ versionNumber: workSubmissions.versionNumber })
+    .from(workSubmissions)
+    .where(eq(workSubmissions.campaignInfluencerId, ci.id));
+  const nextVersion = existing.length > 0 ? Math.max(...existing.map((e) => e.versionNumber)) + 1 : 1;
+
   const [submission] = await db
     .insert(workSubmissions)
     .values({
       campaignInfluencerId: ci.id,
+      versionNumber: nextVersion,
       type: dto.type,
-      url: dto.url,
+      url: dto.url ?? dto.externalUrl ?? null,
+      externalUrl: dto.externalUrl,
+      textContent: dto.textContent,
+      mediaUrl: dto.mediaUrl,
+      mediaType: dto.mediaType,
+      fileName: dto.fileName,
       proofOfWorkUrl: dto.proofOfWorkUrl,
       status: 'pending',
     })
@@ -178,6 +199,30 @@ export async function rejectSubmission(subId: string, reviewNote: string, brandU
   });
 
   return updated;
+}
+
+export async function getMySubmissions(campaignId: string, influencerUser: JWTPayload) {
+  if (!influencerUser.influencerId) throw new ForbiddenError('Influencer profile not found');
+
+  const [ci] = await db
+    .select({ id: campaignInfluencers.id })
+    .from(campaignInfluencers)
+    .where(
+      and(
+        eq(campaignInfluencers.campaignId, campaignId),
+        eq(campaignInfluencers.influencerId, influencerUser.influencerId)
+      )
+    )
+    .limit(1);
+
+  if (!ci) return [];
+
+  const rows = await db
+    .select()
+    .from(workSubmissions)
+    .where(eq(workSubmissions.campaignInfluencerId, ci.id));
+
+  return rows;
 }
 
 async function assertBrandOwnsCampaign(campaignId: string, user: JWTPayload) {

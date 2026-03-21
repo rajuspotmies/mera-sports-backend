@@ -10,6 +10,7 @@ import * as ctrl from './submissions.controller';
 const router = Router({ mergeParams: true });
 
 router.get('/', authenticate(), authorize('brand_owner', 'admin'), asyncHandler(ctrl.listSubmissionsHandler));
+router.get('/mine', authenticate(), authorize('influencer'), asyncHandler(ctrl.getMySubmissionsHandler));
 router.post(
   '/',
   authenticate(),

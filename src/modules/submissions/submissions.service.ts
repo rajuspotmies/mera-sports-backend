@@ -201,6 +201,30 @@ export async function rejectSubmission(subId: string, reviewNote: string, brandU
   return updated;
 }
 
+export async function getMySubmissions(campaignId: string, influencerUser: JWTPayload) {
+  if (!influencerUser.influencerId) throw new ForbiddenError('Influencer profile not found');
+
+  const [ci] = await db
+    .select({ id: campaignInfluencers.id })
+    .from(campaignInfluencers)
+    .where(
+      and(
+        eq(campaignInfluencers.campaignId, campaignId),
+        eq(campaignInfluencers.influencerId, influencerUser.influencerId)
+      )
+    )
+    .limit(1);
+
+  if (!ci) return [];
+
+  const rows = await db
+    .select()
+    .from(workSubmissions)
+    .where(eq(workSubmissions.campaignInfluencerId, ci.id));
+
+  return rows;
+}
+
 async function assertBrandOwnsCampaign(campaignId: string, user: JWTPayload) {
   if (user.role === 'admin') return;
   const [campaign] = await db.select({ brandId: campaigns.brandId }).from(campaigns).where(eq(campaigns.id, campaignId)).limit(1);

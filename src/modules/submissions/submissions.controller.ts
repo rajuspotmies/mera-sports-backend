@@ -19,6 +19,11 @@ export async function listSubmissionsHandler(req: Request, res: Response): Promi
   sendSuccess(res, result);
 }
 
+export async function getMySubmissionsHandler(req: Request, res: Response): Promise<void> {
+  const result = await submissionsService.getMySubmissions(req.params.campaignId, req.user);
+  sendSuccess(res, result);
+}
+
 export async function submitWorkHandler(req: Request, res: Response): Promise<void> {
   const body = submitWorkBody.parse(req.body);
   const key = (req.file as any)?.key as string | undefined;

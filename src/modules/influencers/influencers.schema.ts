@@ -19,6 +19,9 @@ export const updateInfluencerProfileSchema = z.object({
     .optional(),
   rateCard: z.record(z.string(), z.number().min(0)).optional(),
   portfolioUrls: z.array(z.string().url()).optional(),
+  acceptingCollabs: z.boolean().optional(),
+  featuredPortfolioIds: z.array(z.string().uuid()).max(10).optional(),
+  settings: z.record(z.string(), z.union([z.boolean(), z.string(), z.number()])).optional(),
 });
 
 export const searchInfluencersSchema = z.object({

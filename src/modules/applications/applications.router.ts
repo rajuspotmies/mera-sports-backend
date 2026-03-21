@@ -18,6 +18,15 @@ router.get(
   asyncHandler(ctrl.listApplicationsHandler)
 );
 
+// Brand: list all influencers in a "status board" view (no default filters)
+router.get(
+  '/status-board',
+  authenticate(),
+  authorize('brand_owner', 'admin'),
+  validate({ query: listApplicationsQuerySchema }),
+  asyncHandler(ctrl.getStatusBoardHandler)
+);
+
 // Influencer: apply to a public campaign
 router.post(
   '/',

@@ -1,4 +1,4 @@
-import { eq, and, sql } from 'drizzle-orm';
+import { eq, and, sql, inArray } from 'drizzle-orm';
 import { db } from '@/db';
 import {
   campaignInfluencers,
@@ -32,8 +32,14 @@ export async function listApplications(
   const { page, limit } = parsePagination(query);
   const offset = getOffset({ page, limit });
 
-  const conditions = [eq(campaignInfluencers.campaignId, campaignId)];
-  if (query.status) conditions.push(eq(campaignInfluencers.status, query.status));
+  const conditions: any[] = [eq(campaignInfluencers.campaignId, campaignId)];
+  if (query.status) {
+    conditions.push(eq(campaignInfluencers.status, query.status));
+  } else {
+    // Only return applications/invites that have not progressed solidly into execution
+    const earlyStatuses = ['invited', 'applied', 'negotiating', 'accepted', 'rejected', 'withdrawn'];
+    conditions.push(inArray(campaignInfluencers.status, earlyStatuses as any));
+  }
 
   const where = and(...conditions);
 
@@ -49,6 +55,68 @@ export async function listApplications(
       applicationNote: campaignInfluencers.applicationNote,
       appliedAt: campaignInfluencers.appliedAt,
       acceptedAt: campaignInfluencers.acceptedAt,
+      createdAt: campaignInfluencers.createdAt,
+      // Influencer info
+      handle: influencerProfiles.handle,
+      bio: influencerProfiles.bio,
+      tier: influencerProfiles.tier,
+      followerCount: influencerProfiles.followerCount,
+      engagementRate: influencerProfiles.engagementRate,
+      niches: influencerProfiles.niches,
+      userName: users.name,
+      userAvatarUrl: users.avatarUrl,
+    })
+    .from(campaignInfluencers)
+    .innerJoin(influencerProfiles, eq(influencerProfiles.id, campaignInfluencers.influencerId))
+    .innerJoin(users, eq(users.id, influencerProfiles.userId))
+    .where(where)
+    .limit(limit)
+    .offset(offset);
+
+  const [{ count }] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(campaignInfluencers)
+    .where(where);
+
+  return { applications: rows, meta: buildPaginationMeta(count, { page, limit }) };
+}
+
+// ─── Status Board (brand side) ────────────────────────────────────────────────
+
+export async function getStatusBoard(
+  campaignId: string,
+  brandUser: JWTPayload,
+  query: ListApplicationsQuery
+) {
+  // Verify ownership
+  await assertBrandOwnsCampaign(campaignId, brandUser);
+
+  const { page, limit } = parsePagination(query);
+  const offset = getOffset({ page, limit });
+
+  // No default status filter for the status board (show everything)
+  const conditions: any[] = [eq(campaignInfluencers.campaignId, campaignId)];
+  if (query.status) {
+    conditions.push(eq(campaignInfluencers.status, query.status));
+  }
+
+  const where = and(...conditions);
+
+  const rows = await db
+    .select({
+      id: campaignInfluencers.id,
+      influencerId: campaignInfluencers.influencerId,
+      origin: campaignInfluencers.origin,
+      status: campaignInfluencers.status,
+      chatEnabled: campaignInfluencers.chatEnabled,
+      tierRate: campaignInfluencers.tierRate,
+      agreedBudget: campaignInfluencers.agreedBudget,
+      applicationNote: campaignInfluencers.applicationNote,
+      appliedAt: campaignInfluencers.appliedAt,
+      acceptedAt: campaignInfluencers.acceptedAt,
+      paidAt: campaignInfluencers.paidAt,
+      finalPaidAt: campaignInfluencers.finalPaidAt,
+      completedAt: campaignInfluencers.completedAt,
       createdAt: campaignInfluencers.createdAt,
       // Influencer info
       handle: influencerProfiles.handle,
@@ -305,7 +373,7 @@ export async function approveApplication(
     userId: influencerUserId,
     type: 'application',
     title: 'Application Approved!',
-    message: `Your application to "${campaignName}" has been approved. You can now start chatting with the brand.`,
+    message: `Your application to "${campaignName}" has been approved. Chat opens once you reach the script or work stage.`,
     campaignId: campaignId,
     campaignName: campaignName,
     actionUrl: `/campaigns/${campaignId}`,
@@ -381,6 +449,7 @@ export async function getMyApplications(influencerUser: JWTPayload, query: ListA
       campaignId: campaignInfluencers.campaignId,
       origin: campaignInfluencers.origin,
       status: campaignInfluencers.status,
+      chatEnabled: campaignInfluencers.chatEnabled,
       tierRate: campaignInfluencers.tierRate,
       agreedBudget: campaignInfluencers.agreedBudget,
       applicationNote: campaignInfluencers.applicationNote,

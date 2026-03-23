@@ -8,6 +8,7 @@ import { emitToUser } from '@/socket';
 
 import { createNotification } from '../notifications/notifications.service';
 
+/** Chat (start + send) only during script & work phases for this application */
 const CHAT_ALLOWED_STATUSES = [
   'script_pending',
   'script_review',
@@ -106,6 +107,7 @@ export async function listConversations(user: JWTPayload) {
       brandName: brandProfiles.brandName,
       brandLogoUrl: brandProfiles.brandLogoUrl,
       influencerHandle: influencerProfiles.handle,
+      influencerName: users.name,
       influencerAvatarUrl: users.avatarUrl,
       ciStatus: campaignInfluencers.status,
     })
@@ -126,7 +128,7 @@ export async function listConversations(user: JWTPayload) {
 
   return rows.map((r) => ({
     ...r,
-    otherName: isInfluencer ? r.brandName : r.influencerHandle,
+    otherName: isInfluencer ? r.brandName : (r.influencerName || r.influencerHandle),
     otherAvatar: isInfluencer ? r.brandLogoUrl : r.influencerAvatarUrl,
     unreadCount: isInfluencer ? r.influencerUnread : r.brandUnread,
     chatWritable: CHAT_ALLOWED_STATUSES.includes(r.ciStatus as any),
@@ -146,6 +148,8 @@ export async function getConversation(
       campaignId: conversations.campaignId,
       brandId: conversations.brandId,
       influencerId: conversations.influencerId,
+      brandUserId: brandProfiles.userId,
+      influencerUserId: influencerProfiles.userId,
       status: conversations.status,
       lastMessage: conversations.lastMessage,
       lastMessageAt: conversations.lastMessageAt,
@@ -156,6 +160,7 @@ export async function getConversation(
       brandName: brandProfiles.brandName,
       brandLogoUrl: brandProfiles.brandLogoUrl,
       influencerHandle: influencerProfiles.handle,
+      influencerName: users.name,
       influencerAvatarUrl: users.avatarUrl,
       ciStatus: campaignInfluencers.status,
     })
@@ -181,7 +186,7 @@ export async function getConversation(
 
   const conv = {
     ...convRow,
-    otherName: isInfluencer ? convRow.brandName : convRow.influencerHandle,
+    otherName: isInfluencer ? convRow.brandName : (convRow.influencerName || convRow.influencerHandle),
     otherAvatar: isInfluencer ? convRow.brandLogoUrl : convRow.influencerAvatarUrl,
     unreadCount: isInfluencer ? convRow.influencerUnread : convRow.brandUnread,
     chatWritable,

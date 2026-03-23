@@ -57,8 +57,13 @@ export async function getScriptsForInfluencer(campaignId: string, influencerUser
 export async function submitScript(
   campaignId: string,
   influencerUser: JWTPayload,
-  fileUrl: string,
-  originalName: string
+  payload: {
+    fileUrl?: string;
+    originalName?: string;
+    mediaType?: string;
+    externalUrl?: string;
+    textContent?: string;
+  }
 ) {
   if (!influencerUser.influencerId) throw new ForbiddenError('Influencer profile not found');
 
@@ -100,8 +105,11 @@ export async function submitScript(
     .values({
       campaignInfluencerId: ci.id,
       versionNumber: nextVersion,
-      fileUrl,
-      fileName: originalName,
+      fileUrl: payload.fileUrl,
+      fileName: payload.originalName,
+      externalUrl: payload.externalUrl,
+      textContent: payload.textContent,
+      mediaType: payload.mediaType,
       status: 'pending',
     })
     .returning();

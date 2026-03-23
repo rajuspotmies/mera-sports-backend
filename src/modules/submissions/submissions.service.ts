@@ -1,6 +1,6 @@
 import { eq, and } from 'drizzle-orm';
 import { db } from '@/db';
-import { workSubmissions, campaignInfluencers, campaigns, brandProfiles, influencerProfiles } from '@/db/schema';
+import { workSubmissions, campaignInfluencers, campaigns, brandProfiles, influencerProfiles, users } from '@/db/schema';
 import { createNotification } from '../notifications/notifications.service';
 import { NotFoundError, ForbiddenError, BadRequestError } from '@/shared/errors';
 import type { JWTPayload } from '@/shared/types/api';
@@ -9,18 +9,41 @@ export async function listSubmissions(campaignId: string, brandUser: JWTPayload)
   await assertBrandOwnsCampaign(campaignId, brandUser);
 
   const rows = await db
-    .select()
+    .select({
+      submission: workSubmissions,
+      ci: campaignInfluencers,
+      influencerName: users.name,
+      influencerHandle: influencerProfiles.handle,
+      influencerAvatar: users.avatarUrl,
+    })
     .from(workSubmissions)
     .innerJoin(campaignInfluencers, eq(campaignInfluencers.id, workSubmissions.campaignInfluencerId))
+    .innerJoin(influencerProfiles, eq(influencerProfiles.id, campaignInfluencers.influencerId))
+    .innerJoin(users, eq(users.id, influencerProfiles.userId))
     .where(eq(campaignInfluencers.campaignId, campaignId));
 
-  return rows.map((r) => ({ ...r.work_submissions, ci: r.campaign_influencers }));
+  return rows.map((r) => ({
+    ...r.submission,
+    ci: r.ci,
+    influencerName: r.influencerName,
+    influencerHandle: r.influencerHandle,
+    influencerAvatar: r.influencerAvatar,
+  }));
 }
 
 export async function submitWork(
   campaignId: string,
   influencerUser: JWTPayload,
-  dto: { type: string; url: string; proofOfWorkUrl?: string }
+  dto: {
+    type: string;
+    url?: string;
+    externalUrl?: string;
+    textContent?: string;
+    proofOfWorkUrl?: string;
+    mediaUrl?: string;
+    mediaType?: string;
+    fileName?: string;
+  }
 ) {
   if (!influencerUser.influencerId) throw new ForbiddenError('Influencer profile not found');
 
@@ -48,12 +71,24 @@ export async function submitWork(
     throw new BadRequestError(`Cannot submit work when status is '${ci.status}'`);
   }
 
+  const existing = await db
+    .select({ versionNumber: workSubmissions.versionNumber })
+    .from(workSubmissions)
+    .where(eq(workSubmissions.campaignInfluencerId, ci.id));
+  const nextVersion = existing.length > 0 ? Math.max(...existing.map((e) => e.versionNumber)) + 1 : 1;
+
   const [submission] = await db
     .insert(workSubmissions)
     .values({
       campaignInfluencerId: ci.id,
+      versionNumber: nextVersion,
       type: dto.type,
-      url: dto.url,
+      url: dto.url ?? dto.externalUrl ?? null,
+      externalUrl: dto.externalUrl,
+      textContent: dto.textContent,
+      mediaUrl: dto.mediaUrl,
+      mediaType: dto.mediaType,
+      fileName: dto.fileName,
       proofOfWorkUrl: dto.proofOfWorkUrl,
       status: 'pending',
     })
@@ -178,6 +213,30 @@ export async function rejectSubmission(subId: string, reviewNote: string, brandU
   });
 
   return updated;
+}
+
+export async function getMySubmissions(campaignId: string, influencerUser: JWTPayload) {
+  if (!influencerUser.influencerId) throw new ForbiddenError('Influencer profile not found');
+
+  const [ci] = await db
+    .select({ id: campaignInfluencers.id })
+    .from(campaignInfluencers)
+    .where(
+      and(
+        eq(campaignInfluencers.campaignId, campaignId),
+        eq(campaignInfluencers.influencerId, influencerUser.influencerId)
+      )
+    )
+    .limit(1);
+
+  if (!ci) return [];
+
+  const rows = await db
+    .select()
+    .from(workSubmissions)
+    .where(eq(workSubmissions.campaignInfluencerId, ci.id));
+
+  return rows;
 }
 
 async function assertBrandOwnsCampaign(campaignId: string, user: JWTPayload) {

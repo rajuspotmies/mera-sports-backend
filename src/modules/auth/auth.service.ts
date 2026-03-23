@@ -183,6 +183,7 @@ export async function login(dto: LoginDTO) {
       brandName: userProfile.brandName,
       brandType: userProfile.brandType,
       brandLogoUrl: userProfile.brandLogoUrl,
+      logoUrl: userProfile.brandLogoUrl,
       industry: userProfile.industry,
       website: userProfile.website,
       city: userProfile.city,
@@ -276,6 +277,7 @@ export async function refresh(rawToken: string) {
       brandName: userProfile.brandName,
       brandType: userProfile.brandType,
       brandLogoUrl: userProfile.brandLogoUrl,
+      logoUrl: userProfile.brandLogoUrl,
       industry: userProfile.industry,
       website: userProfile.website,
       city: userProfile.city,
@@ -322,6 +324,7 @@ export async function getMe(userId: string) {
         brandId: brand.id,
         brandName: brand.brandName,
         brandLogoUrl: brand.brandLogoUrl,
+        logoUrl: brand.brandLogoUrl,
         industry: brand.industry,
         website: brand.website,
         city: brand.city,
@@ -367,6 +370,7 @@ export async function updateMe(userId: string, dto: UpdateMeDTO) {
 
   const updateData: Partial<typeof users.$inferInsert> = { updatedAt: new Date() };
   if (dto.name !== undefined) updateData.name = dto.name;
+  if (dto.email !== undefined) updateData.email = dto.email;
 
   const [updated] = await db
     .update(users)

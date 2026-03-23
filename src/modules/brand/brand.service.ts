@@ -1,8 +1,9 @@
 import { eq } from 'drizzle-orm';
 import { db } from '@/db';
 import { brandProfiles, users } from '@/db/schema';
-import { NotFoundError } from '@/shared/errors';
+import { NotFoundError, BadRequestError } from '@/shared/errors';
 import type { UpdateBrandDTO } from './brand.schema';
+import { logger } from '@/shared/utils/logger';
 
 export async function getBrandProfile(userId: string) {
   const [brand] = await db
@@ -44,7 +45,8 @@ export async function getBrandProfile(userId: string) {
     otherLanguages: brand.otherLanguages || [],
     industry: brand.industry || "",
     bio: brand.description || "",
-    avatar: brand.brandLogoUrl || ""
+    avatarUrl: brand.brandLogoUrl || brand.userAvatarUrl || "",
+    logoUrl: brand.brandLogoUrl || brand.userAvatarUrl || ""
   };
 }
 
@@ -100,11 +102,12 @@ export async function updateBrandProfile(userId: string, dto: UpdateBrandDTO) {
     otherLanguages: updated.otherLanguages || [],
     industry: updated.industry || "",
     bio: updated.description || "",
-    avatar: updated.brandLogoUrl || ""
+    avatarUrl: updated.brandLogoUrl || "",
+    logoUrl: updated.brandLogoUrl || ""
   };
 }
 
-export async function updateBrandLogo(userId: string, logoUrl: string) {
+export async function updateBrandLogo(userId: string, logoKey: string, mimetype: string) {
   const [brand] = await db
     .select({ id: brandProfiles.id })
     .from(brandProfiles)
@@ -113,10 +116,29 @@ export async function updateBrandLogo(userId: string, logoUrl: string) {
 
   if (!brand) throw new NotFoundError('Brand profile');
 
-  await db
-    .update(brandProfiles)
-    .set({ brandLogoUrl: logoUrl, updatedAt: new Date() })
-    .where(eq(brandProfiles.id, brand.id));
+  try {
+    await db.transaction(async (tx) => {
+      // Keep user.avatarUrl and brand.brandLogoUrl purely in sync to avoid frontend bugs
+      await tx
+        .update(brandProfiles)
+        .set({ brandLogoUrl: logoKey, updatedAt: new Date() })
+        .where(eq(brandProfiles.id, brand.id));
 
-  return { url: logoUrl };
+      await tx
+        .update(users)
+        .set({ avatarUrl: logoKey, updatedAt: new Date() })
+        .where(eq(users.id, userId));
+    });
+
+    logger.info(`[Upload] User ${userId} successfully updated brand logo. key=${logoKey}, mimetype=${mimetype}`);
+  } catch (err) {
+    logger.error(`[Upload] Failed to persist brand logo to DB for user ${userId} key=${logoKey}`, err);
+    throw new BadRequestError('Failed to persist uploaded logo to database.');
+  }
+
+  // Canonical field returned is avatarUrl (and logoUrl as alias)
+  return { 
+    avatarUrl: logoKey, 
+    logoUrl: logoKey 
+  };
 }

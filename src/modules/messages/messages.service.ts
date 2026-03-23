@@ -107,6 +107,7 @@ export async function listConversations(user: JWTPayload) {
       brandName: brandProfiles.brandName,
       brandLogoUrl: brandProfiles.brandLogoUrl,
       influencerHandle: influencerProfiles.handle,
+      influencerName: users.name,
       influencerAvatarUrl: users.avatarUrl,
       ciStatus: campaignInfluencers.status,
     })
@@ -127,7 +128,7 @@ export async function listConversations(user: JWTPayload) {
 
   return rows.map((r) => ({
     ...r,
-    otherName: isInfluencer ? r.brandName : r.influencerHandle,
+    otherName: isInfluencer ? r.brandName : (r.influencerName || r.influencerHandle),
     otherAvatar: isInfluencer ? r.brandLogoUrl : r.influencerAvatarUrl,
     unreadCount: isInfluencer ? r.influencerUnread : r.brandUnread,
     chatWritable: CHAT_ALLOWED_STATUSES.includes(r.ciStatus as any),
@@ -159,6 +160,7 @@ export async function getConversation(
       brandName: brandProfiles.brandName,
       brandLogoUrl: brandProfiles.brandLogoUrl,
       influencerHandle: influencerProfiles.handle,
+      influencerName: users.name,
       influencerAvatarUrl: users.avatarUrl,
       ciStatus: campaignInfluencers.status,
     })
@@ -184,7 +186,7 @@ export async function getConversation(
 
   const conv = {
     ...convRow,
-    otherName: isInfluencer ? convRow.brandName : convRow.influencerHandle,
+    otherName: isInfluencer ? convRow.brandName : (convRow.influencerName || convRow.influencerHandle),
     otherAvatar: isInfluencer ? convRow.brandLogoUrl : convRow.influencerAvatarUrl,
     unreadCount: isInfluencer ? convRow.influencerUnread : convRow.brandUnread,
     chatWritable,

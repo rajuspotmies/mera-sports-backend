@@ -147,6 +147,8 @@ export async function getConversation(
       campaignId: conversations.campaignId,
       brandId: conversations.brandId,
       influencerId: conversations.influencerId,
+      brandUserId: brandProfiles.userId,
+      influencerUserId: influencerProfiles.userId,
       status: conversations.status,
       lastMessage: conversations.lastMessage,
       lastMessageAt: conversations.lastMessageAt,

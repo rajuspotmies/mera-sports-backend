@@ -1,8 +1,9 @@
 {
     "watch": [
-        "src"
+        "src",
+        ".env"
     ],
-    "ext": "ts,json",
+    "ext": "ts,json,env",
     "ignore": [
         "src/**/*.spec.ts",
         "dist"

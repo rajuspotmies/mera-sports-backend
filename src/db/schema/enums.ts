@@ -110,3 +110,5 @@ export const notificationTypeEnum = pgEnum('notification_type', [
 ]);
 
 export const portfolioMediaTypeEnum = pgEnum('portfolio_media_type', ['image', 'video', 'link']);
+
+export const socialPlatformEnum = pgEnum('social_platform', ['instagram', 'youtube', 'twitter']);

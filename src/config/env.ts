@@ -70,6 +70,13 @@ const envSchema = z.object({
   // App Store / Play Store review account (fixed OTP bypass)
   REVIEW_ACCOUNT_PHONE: z.string().default('+911234567890'),
   REVIEW_ACCOUNT_OTP: z.string().default('000000'),
+
+  // Meta / Facebook (Instagram Connect)
+  META_APP_ID: z.string().min(1, 'META_APP_ID is required'),
+  META_APP_SECRET: z.string().min(1, 'META_APP_SECRET is required'),
+  TOKEN_ENCRYPTION_KEY: z
+    .string()
+    .length(64, 'TOKEN_ENCRYPTION_KEY must be 64 hex characters (32 bytes)'),
 });
 
 const parsed = envSchema.safeParse(process.env);

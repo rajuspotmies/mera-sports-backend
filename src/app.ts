@@ -17,6 +17,7 @@ import messagesRouter from './modules/messages/messages.router';
 import analyticsRouter from './modules/analytics/analytics.router';
 import aiRouter from './modules/ai/ai.router';
 import uploadsRouter from './modules/uploads/uploads.router';
+import socialRouter from './modules/social/social.router';
 
 export function createApp() {
   const app = express();
@@ -74,6 +75,7 @@ export function createApp() {
   app.use('/api/v1/analytics', analyticsRouter);
   app.use('/api/v1/ai', aiRouter);
   app.use('/api/v1/uploads', uploadsRouter);
+  app.use('/api/v1/influencers/social', socialRouter);
 
   // ─── 404 handler ──────────────────────────────────────────────────────────
   app.use((_req, res) => {

@@ -1,4 +1,4 @@
-import { eq, and, asc, sql, desc } from 'drizzle-orm';
+import { eq, and, asc, sql, desc, lt } from 'drizzle-orm';
 import { db } from '@/db';
 import { messages, conversations, users, campaignInfluencers, brandProfiles, influencerProfiles, campaigns } from '@/db/schema';
 import { NotFoundError, ForbiddenError, BadRequestError } from '@/shared/errors';
@@ -138,7 +138,7 @@ export async function listConversations(user: JWTPayload) {
 export async function getConversation(
   conversationId: string,
   user: JWTPayload,
-  query: { page?: number; limit?: number }
+  query: { page?: number; limit?: number; sort?: string; order?: string; before?: string }
 ) {
   const isInfluencer = user.role === 'influencer';
 
@@ -195,11 +195,25 @@ export async function getConversation(
   const { page, limit } = parsePagination(query);
   const offset = getOffset({ page, limit });
 
+  // Support sort/order, default to Newest-First (desc)
+  const sortField = query.sort === 'createdAt' || !query.sort ? messages.createdAt : (messages as any)[query.sort];
+  const orderFunc = query.order === 'asc' ? asc : desc;
+
+  const conditions = [eq(messages.conversationId, conversationId)];
+  
+  // Stable Cursor-based pagination
+  if (query.before) {
+    const beforeDate = new Date(query.before);
+    if (!isNaN(beforeDate.getTime())) {
+      conditions.push(lt(messages.createdAt, beforeDate));
+    }
+  }
+
   const msgs = await db
     .select()
     .from(messages)
-    .where(eq(messages.conversationId, conversationId))
-    .orderBy(asc(messages.createdAt))
+    .where(and(...conditions))
+    .orderBy(orderFunc(sortField))
     .limit(limit)
     .offset(offset);
 

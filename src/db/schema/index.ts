@@ -22,3 +22,5 @@ export * from './refresh_tokens';
 export * from './fcm_tokens';
 export * from './otp_codes';
 export * from './influencer_portfolios';
+export * from './reports';
+export * from './blocks';

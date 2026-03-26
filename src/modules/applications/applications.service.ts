@@ -51,6 +51,7 @@ export async function listApplications(
       status: campaignInfluencers.status,
       chatEnabled: campaignInfluencers.chatEnabled,
       tierRate: campaignInfluencers.tierRate,
+      quotedPrice: campaignInfluencers.tierRate,
       agreedBudget: campaignInfluencers.agreedBudget,
       applicationNote: campaignInfluencers.applicationNote,
       appliedAt: campaignInfluencers.appliedAt,
@@ -110,6 +111,7 @@ export async function getStatusBoard(
       status: campaignInfluencers.status,
       chatEnabled: campaignInfluencers.chatEnabled,
       tierRate: campaignInfluencers.tierRate,
+      quotedPrice: campaignInfluencers.tierRate,
       agreedBudget: campaignInfluencers.agreedBudget,
       applicationNote: campaignInfluencers.applicationNote,
       appliedAt: campaignInfluencers.appliedAt,
@@ -199,13 +201,14 @@ export async function applyToCampaign(
     throw new ConflictError('You have already applied to this campaign');
   }
 
-  // Resolve tier_rate: for public single-tier with quote, use provided amount; else from campaign pricing
+  // Resolve tierRate:
+  // 1) Prefer influencer's quoted amount when provided in application payload.
+  // 2) Otherwise fallback to campaign tier pricing based on influencer tier.
   const tierPricing = (campaignData.budgetTierPricing || []) as Array<{ tier: string; rate: number }>;
-  const isSingleTier = tierPricing.length === 1;
   const quotedAmount = dto.amount ?? dto.proposedBudget;
 
   let tierRate: string | null;
-  if (isSingleTier && quotedAmount != null && quotedAmount > 0) {
+  if (quotedAmount != null && quotedAmount > 0) {
     tierRate = quotedAmount.toString();
   } else {
     const [influencer] = await db

@@ -167,8 +167,12 @@ export async function initiatePaymentRound(
       agreedBudget: campaignInfluencers.agreedBudget,
       tierRate: campaignInfluencers.tierRate,
       influencerId: campaignInfluencers.influencerId,
+      influencerTier: influencerProfiles.tier,
+      budgetTierPricing: campaigns.budgetTierPricing,
     })
     .from(campaignInfluencers)
+    .innerJoin(campaigns, eq(campaigns.id, campaignInfluencers.campaignId))
+    .innerJoin(influencerProfiles, eq(influencerProfiles.id, campaignInfluencers.influencerId))
     .where(
       and(
         eq(campaignInfluencers.campaignId, campaignId),
@@ -194,10 +198,19 @@ export async function initiatePaymentRound(
   const itemsToCreate: Array<{ ciId: string; budget: number }> = [];
 
   for (const ci of eligibleCIs) {
-    const budget = Number(ci.agreedBudget ?? ci.tierRate ?? 0);
+    let budget = Number(ci.agreedBudget ?? ci.tierRate ?? 0);
+    if (budget <= 0) {
+      const pricing = (ci.budgetTierPricing || []) as Array<{ tier: string; rate: number }>;
+      const matchedTier = pricing.find((p) => p.tier === ci.influencerTier);
+      if (matchedTier?.rate && matchedTier.rate > 0) {
+        budget = Number(matchedTier.rate);
+      } else if (pricing.length === 1 && Number(pricing[0]?.rate) > 0) {
+        budget = Number(pricing[0].rate);
+      }
+    }
     if (budget <= 0) {
       throw new BadRequestError(
-        `Influencer ${ci.influencerId} has no agreed budget or tier rate. Negotiate a rate first.`
+        `Influencer ${ci.influencerId} has no quoted/agreed budget. Please add the quoted price before payment.`
       );
     }
     // For advance: 50% of agreed budget. For final: remaining 50%.

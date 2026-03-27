@@ -18,6 +18,7 @@ import analyticsRouter from './modules/analytics/analytics.router';
 import aiRouter from './modules/ai/ai.router';
 import uploadsRouter from './modules/uploads/uploads.router';
 import reportsRouter from './modules/reports/reports.router';
+import socialRouter from './modules/social/social.router';
 import { asyncHandler } from './shared/utils/asyncHandler';
 import { razorpayWebhookHandler } from './modules/payments/payments.controller';
 
@@ -99,6 +100,7 @@ export function createApp() {
   app.use('/api/v1/ai', aiRouter);
   app.use('/api/v1/uploads', uploadsRouter);
   app.use('/api/v1/reports', reportsRouter);
+  app.use('/api/v1/influencers/social', socialRouter);
 
   // ─── 404 handler ──────────────────────────────────────────────────────────
   app.use((_req, res) => {

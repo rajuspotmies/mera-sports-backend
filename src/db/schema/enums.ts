@@ -110,16 +110,18 @@ export const notificationTypeEnum = pgEnum('notification_type', [
 ]);
 
 export const portfolioMediaTypeEnum = pgEnum('portfolio_media_type', ['image', 'video', 'link']);
- 
- export const reportReasonEnum = pgEnum('report_reason', [
-   'spam',
-   'harassment',
-   'inappropriate_content',
-   'fake_account',
-   'scam',
-   'other',
- ]);
- 
- export const reportContextTypeEnum = pgEnum('report_context_type', ['chat', 'campaign', 'profile']);
- 
- export const targetTypeEnum = pgEnum('target_type', ['brand', 'influencer']);
+
+export const reportReasonEnum = pgEnum('report_reason', [
+  'spam',
+  'harassment',
+  'inappropriate_content',
+  'fake_account',
+  'scam',
+  'other',
+]);
+
+export const reportContextTypeEnum = pgEnum('report_context_type', ['chat', 'campaign', 'profile']);
+
+export const targetTypeEnum = pgEnum('target_type', ['brand', 'influencer']);
+
+export const socialPlatformEnum = pgEnum('social_platform', ['instagram', 'youtube', 'twitter']);

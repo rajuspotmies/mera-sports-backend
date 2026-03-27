@@ -34,4 +34,21 @@ export async function handleWebhook(payload: any, signature: string, rawBody?: B
       }
     }
   }
+
+  if (payload.event === 'payment.failed') {
+    // entity.order_id links back to the Razorpay order we created
+    const entity = payload.payload?.payment?.entity;
+    const orderId = entity?.order_id;
+    if (orderId) {
+      await paymentsService.handleCampaignPaymentFailure(orderId);
+    }
+  }
+
+  if (payload.event === 'order.expired') {
+    const entity = payload.payload?.order?.entity;
+    const orderId = entity?.id;
+    if (orderId) {
+      await paymentsService.handleCampaignPaymentFailure(orderId);
+    }
+  }
 }

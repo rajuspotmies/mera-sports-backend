@@ -6,6 +6,7 @@ export const UPLOAD_FOLDERS = {
   campaigns: 'campaigns',
   scripts: 'scripts',
   submissions: 'submissions',
+  portfolio: 'portfolio',
 } as const;
 
 export type UploadFolder = keyof typeof UPLOAD_FOLDERS;
@@ -21,6 +22,7 @@ export const ALLOWED_MIME_TYPES: Record<UploadFolder, string[]> = {
     'text/plain',
   ],
   submissions: ['image/png', 'image/jpeg', 'video/mp4', 'video/quicktime'],
+  portfolio: ['image/png', 'image/jpeg', 'image/webp', 'video/mp4', 'video/quicktime'],
 };
 
 export const MAX_FILE_SIZES: Record<UploadFolder, number> = {
@@ -29,4 +31,5 @@ export const MAX_FILE_SIZES: Record<UploadFolder, number> = {
   campaigns: 5 * 1024 * 1024,    // 5MB
   scripts: 10 * 1024 * 1024,     // 10MB
   submissions: 50 * 1024 * 1024, // 50MB
+  portfolio: 50 * 1024 * 1024,   // 50MB
 };

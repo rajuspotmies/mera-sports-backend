@@ -37,6 +37,13 @@ export async function inviteInfluencersHandler(req: Request, res: Response): Pro
 
 // ─── Portfolio ───────────────────────────────────────────────────────────────
 
+export async function uploadPortfolioMediaHandler(req: Request, res: Response): Promise<void> {
+  const files = req.files as Express.MulterS3.File[];
+  if (!files || files.length === 0) throw new BadRequestError('No files uploaded');
+  const media = files.map((f) => ({ url: f.key }));
+  sendSuccess(res, { media });
+}
+
 export async function addPortfolioItemHandler(req: Request, res: Response): Promise<void> {
   const result = await influencersService.addPortfolioItem(req.user.sub, req.body);
   sendSuccess(res, result, 201);

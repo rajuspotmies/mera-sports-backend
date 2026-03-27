@@ -55,6 +55,15 @@ router.post(
   asyncHandler(ctrl.uploadAvatarHandler)
 );
 
+router.post(
+  '/profile/portfolio-media',
+  authenticate('influencer'),
+  uploadLimiter,
+  setUploadFolder('portfolio'),
+  upload.array('files', 10),
+  asyncHandler(ctrl.uploadPortfolioMediaHandler)
+);
+
 // ─── Portfolio ───────────────────────────────────────────────────────────────
 router.post(
   '/portfolio',

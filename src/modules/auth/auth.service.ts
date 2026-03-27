@@ -14,6 +14,7 @@ import {
   BadRequestError,
 } from '@/shared/errors';
 import { sendWhatsAppOTP } from '../notifications/whatsapp.service';
+import { sendEmail } from '@/shared/utils/email';
 import type { JWTPayload } from '@/shared/types/api';
 import type { RegisterDTO, LoginDTO, UpdateMeDTO, SendOtpDTO, VerifyOtpDTO, ForgotPasswordDTO, ResetPasswordDTO } from './auth.schema';
 
@@ -581,11 +582,20 @@ export async function forgotPassword(dto: ForgotPasswordDTO) {
   const title = 'Password Reset Request';
   const message = `You have requested to reset your password. Please click the link below to set a new password:\n\n${resetLink}\n\nThis link will expire in 1 hour. If you did not request this, please ignore this email.`;
 
-  await emailQueue.add('send-email', {
-    userId: user.id,
-    type: 'system',
-    title,
-    message,
+  await sendEmail({
+    to: user.email!,
+    subject: title,
+    html: `
+      <html>
+        <body style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <h2 style="color: #1a1a1a;">${title}</h2>
+          <p>Hi ${user.name || 'there'},</p>
+          <p>${message.replace(/\n\n/g, '</p><p>').replace(/\n/g, '<br/>')}</p>
+          <br/>
+          <p style="color: #666;">Thanks,<br/>Mutiny Maker Team</p>
+        </body>
+      </html>
+    `,
   });
 
   return { success: true, message: 'If this email is registered, a reset link will be sent.' };

@@ -2,11 +2,9 @@ import { Job } from 'bull';
 import { db } from '@/db';
 import { users } from '@/db/schema';
 import { eq } from 'drizzle-orm';
-import { env } from '@/config/env';
 import { AppError } from '@/shared/errors';
 import { logger } from '@/shared/utils/logger';
-
-const EMAIL_FROM = env.EMAIL_FROM || 'Mutiny Maker <notifications@mutinytalent.com>';
+import { sendEmail } from '@/shared/utils/email';
 
 function renderEmailTemplate(_type: string, data: { title: string; message: string; userName: string }) {
   return `
@@ -20,38 +18,6 @@ function renderEmailTemplate(_type: string, data: { title: string; message: stri
       </body>
     </html>
   `;
-}
-
-async function sendViaResend(to: string, subject: string, html: string) {
-  const { Resend } = await import('resend');
-  const resend = new Resend(env.SMTP_API_KEY);
-
-  const { error } = await resend.emails.send({
-    from: EMAIL_FROM,
-    to,
-    subject,
-    html,
-  });
-
-  if (error) {
-    throw new AppError('EMAIL_SEND_FAILED', `Resend error: ${error.message}`);
-  }
-}
-
-async function sendViaSMTP(to: string, subject: string, html: string) {
-  const nodemailer = await import('nodemailer');
-
-  const transporter = nodemailer.default.createTransport({
-    host: env.SMTP_HOST || 'smtp.resend.com',
-    port: env.SMTP_PORT || 465,
-    secure: (env.SMTP_PORT ?? 465) === 465,
-    auth: {
-      user: env.SMTP_USER || 'resend',
-      pass: env.SMTP_PASS || env.SMTP_API_KEY || '',
-    },
-  });
-
-  await transporter.sendMail({ from: EMAIL_FROM, to, subject, html });
 }
 
 export async function processEmailJob(job: Job) {
@@ -70,11 +36,9 @@ export async function processEmailJob(job: Job) {
 
   const html = renderEmailTemplate(type, { title, message, userName: user.name || 'there' });
 
-  if (env.SMTP_API_KEY) {
-    await sendViaResend(user.email, title, html);
-  } else if (env.SMTP_HOST) {
-    await sendViaSMTP(user.email, title, html);
-  } else {
-    logger.warn('No email provider configured (set SMTP_API_KEY for Resend or SMTP_HOST for SMTP)');
-  }
+  await sendEmail({
+    to: user.email,
+    subject: title,
+    html,
+  });
 }

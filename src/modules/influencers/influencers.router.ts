@@ -109,4 +109,34 @@ router.post(
   asyncHandler(ctrl.inviteInfluencersHandler)
 );
 
+// ─── Bank Details (influencer manages own) ───────────────────────────────────
+import { upsertBankDetailsSchema } from './bank-details/bank-details.schema';
+import * as bankDetailsCtrl from './bank-details/bank-details.controller';
+
+router.get(
+  '/bank-details',
+  authenticate('influencer'),
+  asyncHandler(bankDetailsCtrl.getOwnBankDetailsHandler)
+);
+
+router.post(
+  '/bank-details',
+  authenticate('influencer'),
+  validate({ body: upsertBankDetailsSchema }),
+  asyncHandler(bankDetailsCtrl.createBankDetailsHandler)
+);
+
+router.put(
+  '/bank-details',
+  authenticate('influencer'),
+  validate({ body: upsertBankDetailsSchema }),
+  asyncHandler(bankDetailsCtrl.updateBankDetailsHandler)
+);
+
+router.delete(
+  '/bank-details',
+  authenticate('influencer'),
+  asyncHandler(bankDetailsCtrl.deleteBankDetailsHandler)
+);
+
 export default router;

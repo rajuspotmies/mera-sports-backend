@@ -13,7 +13,9 @@ export const reports = pgTable('reports', {
   description: text('description'),
   contextType: reportContextTypeEnum('context_type'),
   contextId: uuid('context_id'),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  createdAt:  timestamp('created_at',  { withTimezone: true }).defaultNow().notNull(),
+  resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+  resolvedBy: uuid('resolved_by').references(() => users.id, { onDelete: 'set null' }),
 });
 
 export type Report = typeof reports.$inferSelect;

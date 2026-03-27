@@ -25,3 +25,4 @@ export * from './influencer_portfolios';
 export * from './reports';
 export * from './blocks';
 export * from './social_connections';
+export * from './bank_details';

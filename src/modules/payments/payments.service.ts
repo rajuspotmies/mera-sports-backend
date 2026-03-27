@@ -223,6 +223,10 @@ export async function initiatePaymentRound(
   const platformFeeAmount = (influencerBudgetTotal * feePercent) / 100;
   const totalAmount = influencerBudgetTotal + platformFeeAmount;
 
+  if (totalAmount <= 0) {
+    throw new BadRequestError('Payment amount must be greater than 0');
+  }
+
   // Determine round number
   const [lastPayment] = await db
     .select({ round: campaignPayments.round })
@@ -235,12 +239,14 @@ export async function initiatePaymentRound(
 
   // Create Razorpay order
   const rzp = getRazorpay();
+  console.log('Creating Razorpay order:', { amount: Math.round(totalAmount * 100), currency: 'INR' });
   const order = await rzp.orders.create({
     amount: Math.round(totalAmount * 100), // paise
     currency: 'INR',
     receipt: `r${round}_${paymentType}_${campaignId.split('-')[0]}`,
     notes: { campaignId, round, paymentType },
   });
+  console.log('Razorpay order created:', order.id, order.amount);
 
   // Insert campaign_payments row
   const [payment] = await db
@@ -276,10 +282,11 @@ export async function initiatePaymentRound(
     .where(inArray(campaignInfluencers.id, selectedCiIds));
 
   return {
-    paymentId: payment.id,
     orderId: order.id,
     amount: order.amount,
     currency: order.currency,
+    paymentId: payment.id,
+    keyId: env.RAZORPAY_KEY_ID,
     round,
     paymentType,
     influencersCount: eligibleCIs.length,

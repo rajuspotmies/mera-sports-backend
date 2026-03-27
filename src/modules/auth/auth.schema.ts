@@ -40,6 +40,15 @@ export const verifyOtpSchema = z.object({
   name: z.string().min(2).max(255).optional(), // for registration
 });
 
+export const forgotPasswordSchema = z.object({
+  email: z.string().email(),
+});
+
+export const resetPasswordSchema = z.object({
+  token: z.string().min(1),
+  password: z.string().min(8, 'Password must be at least 8 characters'),
+});
+
 export type RegisterDTO = z.infer<typeof registerSchema>;
 export type LoginDTO = z.infer<typeof loginSchema>;
 export type RefreshDTO = z.infer<typeof refreshSchema>;
@@ -47,3 +56,5 @@ export type LogoutDTO = z.infer<typeof logoutSchema>;
 export type UpdateMeDTO = z.infer<typeof updateMeSchema>;
 export type SendOtpDTO = z.infer<typeof sendOtpSchema>;
 export type VerifyOtpDTO = z.infer<typeof verifyOtpSchema>;
+export type ForgotPasswordDTO = z.infer<typeof forgotPasswordSchema>;
+export type ResetPasswordDTO = z.infer<typeof resetPasswordSchema>;

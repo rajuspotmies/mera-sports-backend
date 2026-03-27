@@ -8,7 +8,7 @@ import { asyncHandler } from '@/shared/utils/asyncHandler';
 import { updateBrandSchema } from './brand.schema';
 import * as ctrl from './brand.controller';
 import * as authCtrl from '../auth/auth.controller';
-import { registerSchema, loginSchema, updateMeSchema } from '../auth/auth.schema';
+import { registerSchema, loginSchema, updateMeSchema, forgotPasswordSchema, resetPasswordSchema } from '../auth/auth.schema';
 
 const router = Router();
 
@@ -18,6 +18,8 @@ router.post('/auth/register', authLimiter, validate({ body: registerSchema }), a
 router.post('/auth/login', authLimiter, validate({ body: loginSchema }), asyncHandler(authCtrl.loginHandler('brand_owner')));
 router.post('/auth/refresh', asyncHandler(authCtrl.refreshHandler('brand_owner')));
 router.post('/auth/logout', asyncHandler(authCtrl.logoutHandler('brand_owner')));
+router.post('/auth/forgot-password', authLimiter, validate({ body: forgotPasswordSchema }), asyncHandler(authCtrl.forgotPasswordHandler));
+router.post('/auth/reset-password', authLimiter, validate({ body: resetPasswordSchema }), asyncHandler(authCtrl.resetPasswordHandler));
 
 router.get('/auth/me', authenticate('brand_owner'), asyncHandler(authCtrl.getMeHandler));
 router.put('/auth/me', authenticate('brand_owner'), validate({ body: updateMeSchema }), asyncHandler(authCtrl.updateMeHandler));

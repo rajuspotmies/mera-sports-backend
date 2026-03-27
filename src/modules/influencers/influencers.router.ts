@@ -55,6 +55,15 @@ router.post(
   asyncHandler(ctrl.uploadAvatarHandler)
 );
 
+router.post(
+  '/profile/portfolio-media',
+  authenticate('influencer'),
+  uploadLimiter,
+  setUploadFolder('portfolio'),
+  upload.array('files', 10),
+  asyncHandler(ctrl.uploadPortfolioMediaHandler)
+);
+
 // ─── Portfolio ───────────────────────────────────────────────────────────────
 router.post(
   '/portfolio',
@@ -107,6 +116,36 @@ router.post(
   authorize('brand_owner', 'admin'),
   validate({ body: inviteInfluencersSchema }),
   asyncHandler(ctrl.inviteInfluencersHandler)
+);
+
+// ─── Bank Details (influencer manages own) ───────────────────────────────────
+import { upsertBankDetailsSchema } from './bank-details/bank-details.schema';
+import * as bankDetailsCtrl from './bank-details/bank-details.controller';
+
+router.get(
+  '/bank-details',
+  authenticate('influencer'),
+  asyncHandler(bankDetailsCtrl.getOwnBankDetailsHandler)
+);
+
+router.post(
+  '/bank-details',
+  authenticate('influencer'),
+  validate({ body: upsertBankDetailsSchema }),
+  asyncHandler(bankDetailsCtrl.createBankDetailsHandler)
+);
+
+router.put(
+  '/bank-details',
+  authenticate('influencer'),
+  validate({ body: upsertBankDetailsSchema }),
+  asyncHandler(bankDetailsCtrl.updateBankDetailsHandler)
+);
+
+router.delete(
+  '/bank-details',
+  authenticate('influencer'),
+  asyncHandler(bankDetailsCtrl.deleteBankDetailsHandler)
 );
 
 export default router;

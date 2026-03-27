@@ -18,6 +18,7 @@ import negotiationRouter from '@/modules/negotiation/negotiation.router';
 import scriptsRouter from '@/modules/scripts/scripts.router';
 import submissionsRouter from '@/modules/submissions/submissions.router';
 import paymentsRouter from '@/modules/payments/payments.router';
+import invoiceRouter from '@/modules/invoice/invoice.router';
 
 const router = Router();
 
@@ -99,5 +100,6 @@ router.use('/:campaignId/negotiation', negotiationRouter);
 router.use('/:campaignId/scripts', scriptsRouter);
 router.use('/:campaignId/submissions', submissionsRouter);
 router.use('/:campaignId/payment', paymentsRouter);
+router.use('/:campaignId/invoice', invoiceRouter);
 
 export default router;

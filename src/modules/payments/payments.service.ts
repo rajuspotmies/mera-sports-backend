@@ -622,3 +622,46 @@ export async function getPaymentRoundDetails(campaignId: string, paymentId: stri
 
   return { payment, items };
 }
+
+// ─── Handle payment failure (webhook: payment.failed / order.expired) ────────
+
+export async function handleCampaignPaymentFailure(razorpayOrderId: string) {
+  const [payment] = await db
+    .select()
+    .from(campaignPayments)
+    .where(
+      and(
+        eq(campaignPayments.razorpayOrderId, razorpayOrderId),
+        eq(campaignPayments.status, 'pending')
+      )
+    )
+    .limit(1);
+
+  if (!payment) return; // Already handled or not found
+
+  await db.transaction(async (tx) => {
+    await tx
+      .update(campaignPayments)
+      .set({ status: 'failed', updatedAt: new Date() })
+      .where(eq(campaignPayments.id, payment.id));
+
+    const items = await tx
+      .select({ campaignInfluencerId: campaignPaymentItems.campaignInfluencerId })
+      .from(campaignPaymentItems)
+      .where(eq(campaignPaymentItems.campaignPaymentId, payment.id));
+
+    const ciIds = items.map((i) => i.campaignInfluencerId);
+    if (!ciIds.length) return;
+
+    // Revert only those still in payment_pending (guard against race conditions)
+    await tx
+      .update(campaignInfluencers)
+      .set({ status: 'accepted', updatedAt: new Date() })
+      .where(
+        and(
+          inArray(campaignInfluencers.id, ciIds),
+          eq(campaignInfluencers.status, 'payment_pending')
+        )
+      );
+  });
+}

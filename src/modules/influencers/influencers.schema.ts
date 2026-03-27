@@ -45,7 +45,7 @@ export const inviteInfluencersSchema = z.object({
 export const addPortfolioItemSchema = z.object({
   title: z.string().max(255).optional(),
   description: z.string().max(2000).optional(),
-  mediaUrl: z.string().url(),
+  mediaUrl: z.string().min(1), // accepts both full URLs and S3 storage keys
   mediaType: z.enum(['image', 'video', 'link']),
   externalUrl: z.string().url().optional(),
 });

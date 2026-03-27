@@ -37,7 +37,8 @@ export async function listApplications(
     conditions.push(eq(campaignInfluencers.status, query.status));
   } else {
     // Only return applications/invites that have not progressed solidly into execution
-    const earlyStatuses = ['invited', 'applied', 'negotiating', 'accepted', 'rejected', 'withdrawn'];
+    // payment_pending is included so brands can see applications stuck awaiting payment
+    const earlyStatuses = ['invited', 'applied', 'negotiating', 'accepted', 'payment_pending', 'rejected', 'withdrawn'];
     conditions.push(inArray(campaignInfluencers.status, earlyStatuses as any));
   }
 

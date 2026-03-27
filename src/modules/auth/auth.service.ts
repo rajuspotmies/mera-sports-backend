@@ -4,6 +4,7 @@ import crypto from 'crypto';
 import { eq, and, gt, sql } from 'drizzle-orm';
 import { db } from '@/db';
 import { users, brandProfiles, influencerProfiles, refreshTokens, campaigns, campaignInfluencers, otpCodes } from '@/db/schema';
+import { emailQueue } from '@/jobs/queue';
 import { env } from '@/config/env';
 import { logger } from '@/shared/utils/logger';
 import {
@@ -14,7 +15,7 @@ import {
 } from '@/shared/errors';
 import { sendWhatsAppOTP } from '../notifications/whatsapp.service';
 import type { JWTPayload } from '@/shared/types/api';
-import type { RegisterDTO, LoginDTO, UpdateMeDTO, SendOtpDTO, VerifyOtpDTO } from './auth.schema';
+import type { RegisterDTO, LoginDTO, UpdateMeDTO, SendOtpDTO, VerifyOtpDTO, ForgotPasswordDTO, ResetPasswordDTO } from './auth.schema';
 
 // ─── Token helpers ─────────────────────────────────────────────────────────
 
@@ -559,4 +560,60 @@ export async function verifyOtp(dto: VerifyOtpDTO) {
     refreshToken,
     user: userPayload,
   };
+}
+
+export async function forgotPassword(dto: ForgotPasswordDTO) {
+  const [user] = await db.select().from(users).where(eq(users.email, dto.email)).limit(1);
+  if (!user || !user.isActive) {
+    // Return success message even if email not found to prevent account enumeration
+    return { success: true, message: 'If this email is registered, a reset link will be sent.' };
+  }
+
+  const resetToken = jwt.sign(
+    { sub: user.id, type: 'password-reset' },
+    env.JWT_SECRET,
+    { expiresIn: '1h' }
+  );
+
+  const frontendUrl = env.FRONTEND_URLS[0] || 'https://mutiny-maker.web.app';
+  const resetLink = `${frontendUrl}/reset-password?token=${resetToken}`;
+
+  const title = 'Password Reset Request';
+  const message = `You have requested to reset your password. Please click the link below to set a new password:\n\n${resetLink}\n\nThis link will expire in 1 hour. If you did not request this, please ignore this email.`;
+
+  await emailQueue.add('send-email', {
+    userId: user.id,
+    type: 'system',
+    title,
+    message,
+  });
+
+  return { success: true, message: 'If this email is registered, a reset link will be sent.' };
+}
+
+export async function resetPassword(dto: ResetPasswordDTO) {
+  let decoded: any;
+  try {
+    decoded = jwt.verify(dto.token, env.JWT_SECRET);
+  } catch (error) {
+    throw new BadRequestError('Invalid or expired reset token');
+  }
+
+  if (decoded.type !== 'password-reset') {
+    throw new BadRequestError('Invalid reset token type');
+  }
+
+  const userId = decoded.sub;
+  const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+  if (!user || !user.isActive) {
+    throw new NotFoundError('User not found or inactive');
+  }
+
+  const passwordHash = await bcrypt.hash(dto.password, 12);
+  await db.update(users).set({ passwordHash, updatedAt: new Date() }).where(eq(users.id, userId));
+
+  // Revoke all refresh tokens for this user for security
+  await db.delete(refreshTokens).where(eq(refreshTokens.userId, userId));
+
+  return { success: true, message: 'Password has been reset successfully. Please login with your new password.' };
 }

@@ -473,9 +473,13 @@ export async function getMyApplications(influencerUser: JWTPayload, query: ListA
       campaignThumbnail: campaigns.thumbnailUrl,
       budgetMode: campaigns.budgetMode,
       scriptType: campaigns.scriptType,
+      // Brand info
+      brandName: brandProfiles.brandName,
+      brandLogoUrl: brandProfiles.brandLogoUrl,
     })
     .from(campaignInfluencers)
     .innerJoin(campaigns, eq(campaigns.id, campaignInfluencers.campaignId))
+    .leftJoin(brandProfiles, eq(brandProfiles.id, campaigns.brandId))
     .where(where)
     .limit(limit)
     .offset(offset);

@@ -2,7 +2,7 @@ import { eq, and } from 'drizzle-orm';
 import { db } from '@/db';
 import { socialConnections, influencerProfiles } from '@/db/schema';
 import { env } from '@/config/env';
-import { BadRequestError, AppError, NotFoundError } from '@/shared/errors';
+import { BadRequestError, AppError } from '@/shared/errors';
 import { encryptToken } from '@/shared/utils/crypto';
 import type { ConnectSocialDTO, DisconnectSocialDTO } from './social.schema';
 
@@ -113,7 +113,7 @@ async function fetchInstagramAccount(longLivedToken: string): Promise<{
 
   if (!accounts.data || accounts.data.length === 0) {
     throw new BadRequestError(
-      'No Facebook Page is linked to your account. Please link a Page to your Instagram in Meta Business Suite, then reconnect.',
+      'No Facebook Page found. To connect Instagram: (1) Switch to a Professional/Business account on Instagram, (2) Link it to a Facebook Page in Meta Business Suite, then reconnect.',
     );
   }
 
@@ -122,7 +122,7 @@ async function fetchInstagramAccount(longLivedToken: string): Promise<{
 
   if (!pageWithIG || !pageWithIG.instagram_business_account) {
     throw new BadRequestError(
-      'Your Instagram account must be a Business or Creator account to connect. Go to Instagram Settings → Account → Switch to Professional Account, then reconnect.',
+      'No Instagram Business account linked to your Facebook Pages. To fix: Go to Instagram → Settings → Account type → Switch to Professional Account, then link it to your Facebook Page in Meta Business Suite.',
     );
   }
 

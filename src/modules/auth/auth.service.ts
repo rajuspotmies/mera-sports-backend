@@ -14,8 +14,9 @@ import {
   BadRequestError,
 } from '@/shared/errors';
 import { sendWhatsAppOTP } from '../notifications/whatsapp.service';
+import { sendEmail } from '@/shared/utils/email';
 import type { JWTPayload } from '@/shared/types/api';
-import type { RegisterDTO, LoginDTO, UpdateMeDTO, SendOtpDTO, VerifyOtpDTO, ForgotPasswordDTO, ResetPasswordDTO } from './auth.schema';
+import type { RegisterDTO, LoginDTO, UpdateMeDTO, SendOtpDTO, VerifyOtpDTO, ForgotPasswordDTO, ResetPasswordDTO, ChangePasswordDTO } from './auth.schema';
 
 // ─── Token helpers ─────────────────────────────────────────────────────────
 
@@ -101,6 +102,7 @@ export async function register(dto: RegisterDTO) {
     name: user.name,
     role: user.role,
     avatarUrl: user.avatarUrl,
+    phoneNumber: user.phoneNumber,
     brandId,
     influencerId,
     ...(dto.role === 'brand_owner' ? {
@@ -178,6 +180,7 @@ export async function login(dto: LoginDTO) {
     name: user.name,
     role: user.role,
     avatarUrl: user.avatarUrl,
+    phoneNumber: user.phoneNumber,
     brandId,
     influencerId,
     ...(user.role === 'brand_owner' && userProfile ? {
@@ -272,6 +275,7 @@ export async function refresh(rawToken: string) {
     name: user.name,
     role: user.role,
     avatarUrl: user.avatarUrl,
+    phoneNumber: user.phoneNumber,
     brandId,
     influencerId,
     ...(user.role === 'brand_owner' && userProfile ? {
@@ -360,6 +364,7 @@ export async function getMe(userId: string) {
     name: user.name,
     role: user.role,
     avatarUrl: user.avatarUrl,
+    phoneNumber: user.phoneNumber,
     isVerified: user.isVerified,
     ...profile,
   };
@@ -507,7 +512,7 @@ export async function verifyOtp(dto: VerifyOtpDTO) {
       name: dto.name,
       role: 'influencer',
       isVerified: true,
-      email: `${dto.phoneNumber}@temp.mutiny.com`, // Temporary email placeholder
+      email: dto.email ?? `${dto.phoneNumber}@temp.mutiny.com`,
       passwordHash: '', // No password for OTP users
     }).returning();
 
@@ -581,11 +586,20 @@ export async function forgotPassword(dto: ForgotPasswordDTO) {
   const title = 'Password Reset Request';
   const message = `You have requested to reset your password. Please click the link below to set a new password:\n\n${resetLink}\n\nThis link will expire in 1 hour. If you did not request this, please ignore this email.`;
 
-  await emailQueue.add('send-email', {
-    userId: user.id,
-    type: 'system',
-    title,
-    message,
+  await sendEmail({
+    to: user.email!,
+    subject: title,
+    html: `
+      <html>
+        <body style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <h2 style="color: #1a1a1a;">${title}</h2>
+          <p>Hi ${user.name || 'there'},</p>
+          <p>${message.replace(/\n\n/g, '</p><p>').replace(/\n/g, '<br/>')}</p>
+          <br/>
+          <p style="color: #666;">Thanks,<br/>Mutiny Maker Team</p>
+        </body>
+      </html>
+    `,
   });
 
   return { success: true, message: 'If this email is registered, a reset link will be sent.' };
@@ -616,4 +630,17 @@ export async function resetPassword(dto: ResetPasswordDTO) {
   await db.delete(refreshTokens).where(eq(refreshTokens.userId, userId));
 
   return { success: true, message: 'Password has been reset successfully. Please login with your new password.' };
+}
+
+export async function changePassword(userId: string, dto: ChangePasswordDTO) {
+  const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+  if (!user || !user.isActive) throw new NotFoundError('User not found');
+
+  const valid = await bcrypt.compare(dto.currentPassword, user.passwordHash ?? '');
+  if (!valid) throw new BadRequestError('Current password is incorrect');
+
+  const passwordHash = await bcrypt.hash(dto.newPassword, 12);
+  await db.update(users).set({ passwordHash, updatedAt: new Date() }).where(eq(users.id, userId));
+
+  return { success: true, message: 'Password updated successfully' };
 }

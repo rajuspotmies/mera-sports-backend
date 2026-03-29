@@ -2,6 +2,87 @@ import { db } from '@/db';
 import { campaigns, campaignInfluencers, analyticsSnapshots, scriptVersions, workSubmissions } from '@/db/schema';
 import { eq, sql, and, desc } from 'drizzle-orm';
 
+export async function getContentAnalytics(brandId?: string, influencerId?: string) {
+    if (brandId) {
+        // Submission type breakdown for this brand's campaigns
+        const byType = await db
+            .select({
+                type: workSubmissions.type,
+                total: sql<number>`count(*)::int`,
+                approved: sql<number>`count(case when ${workSubmissions.status} = 'approved' then 1 end)::int`,
+                rejected: sql<number>`count(case when ${workSubmissions.status} = 'rejected' then 1 end)::int`,
+                pending: sql<number>`count(case when ${workSubmissions.status} = 'pending' then 1 end)::int`,
+            })
+            .from(workSubmissions)
+            .innerJoin(campaignInfluencers, eq(campaignInfluencers.id, workSubmissions.campaignInfluencerId))
+            .innerJoin(campaigns, eq(campaigns.id, campaignInfluencers.campaignId))
+            .where(eq(campaigns.brandId, brandId))
+            .groupBy(workSubmissions.type);
+
+        const scriptStats = await db
+            .select({
+                total: sql<number>`count(*)::int`,
+                approved: sql<number>`count(case when ${scriptVersions.status} = 'approved' then 1 end)::int`,
+                revision: sql<number>`count(case when ${scriptVersions.status} = 'revision_requested' then 1 end)::int`,
+            })
+            .from(scriptVersions)
+            .innerJoin(campaignInfluencers, eq(campaignInfluencers.id, scriptVersions.campaignInfluencerId))
+            .innerJoin(campaigns, eq(campaigns.id, campaignInfluencers.campaignId))
+            .where(eq(campaigns.brandId, brandId));
+
+        const totalSubmissions = byType.reduce((s, r) => s + r.total, 0);
+        return {
+            submissionsByType: byType.map(r => ({
+                type: r.type,
+                total: r.total,
+                approved: r.approved,
+                rejected: r.rejected,
+                pending: r.pending,
+                approvalRate: r.total > 0 ? Math.round((r.approved / r.total) * 100) : 0,
+            })),
+            totalSubmissions,
+            scriptStats: scriptStats[0] ?? { total: 0, approved: 0, revision: 0 },
+        };
+    }
+
+    if (influencerId) {
+        const byType = await db
+            .select({
+                type: workSubmissions.type,
+                total: sql<number>`count(*)::int`,
+                approved: sql<number>`count(case when ${workSubmissions.status} = 'approved' then 1 end)::int`,
+                rejected: sql<number>`count(case when ${workSubmissions.status} = 'rejected' then 1 end)::int`,
+            })
+            .from(workSubmissions)
+            .innerJoin(campaignInfluencers, eq(campaignInfluencers.id, workSubmissions.campaignInfluencerId))
+            .where(eq(campaignInfluencers.influencerId, influencerId))
+            .groupBy(workSubmissions.type);
+
+        const scriptStats = await db
+            .select({
+                total: sql<number>`count(*)::int`,
+                approved: sql<number>`count(case when ${scriptVersions.status} = 'approved' then 1 end)::int`,
+            })
+            .from(scriptVersions)
+            .innerJoin(campaignInfluencers, eq(campaignInfluencers.id, scriptVersions.campaignInfluencerId))
+            .where(eq(campaignInfluencers.influencerId, influencerId));
+
+        return {
+            submissionsByType: byType.map(r => ({
+                type: r.type,
+                total: r.total,
+                approved: r.approved,
+                rejected: r.rejected,
+                approvalRate: r.total > 0 ? Math.round((r.approved / r.total) * 100) : 0,
+            })),
+            totalSubmissions: byType.reduce((s, r) => s + r.total, 0),
+            scriptStats: scriptStats[0] ?? { total: 0, approved: 0 },
+        };
+    }
+
+    return { submissionsByType: [], totalSubmissions: 0, scriptStats: { total: 0, approved: 0 } };
+}
+
 export async function getBrandOverview(brandId: string) {
     // 1. Basic counts
     const [counts] = await db
@@ -90,7 +171,6 @@ export async function getBrandOverview(brandId: string) {
         .where(sql`row_num = 1`);
 
     const totalSpend = spend.totalSpend || 0;
-    const totalViews = Number(performance?.totalViews || 0);
     const totalEngagements = Number(performance?.totalEngagements || 0);
     const totalReach = Number(performance?.totalReach || 0);
 

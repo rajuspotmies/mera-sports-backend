@@ -9,10 +9,7 @@ import {
 } from '@/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { NotFoundError, BadRequestError } from '@/shared/errors';
-import { env } from '@/config/env';
-import { logger } from '@/shared/utils/logger';
-
-const EMAIL_FROM = env.EMAIL_FROM || 'Mutiny Maker <notifications@mutinytalent.com>';
+import { sendEmail } from '@/shared/utils/email';
 
 // ─── PDF Generation ──────────────────────────────────────────────────────────
 
@@ -242,40 +239,12 @@ async function sendInvoiceEmail(
     </html>
   `;
 
-  const filename = `invoice-${invoiceNumber}.pdf`;
-
-  if (env.SMTP_API_KEY) {
-    const { Resend } = await import('resend');
-    const resend = new Resend(env.SMTP_API_KEY);
-    const { error } = await resend.emails.send({
-      from: EMAIL_FROM,
-      to,
-      subject,
-      html,
-      attachments: [{ filename, content: pdfBuffer }],
-    });
-    if (error) {
-      logger.error('Resend invoice email error', error);
-      throw new Error(`Failed to send invoice email: ${error.message}`);
-    }
-  } else if (env.SMTP_HOST) {
-    const nodemailer = await import('nodemailer');
-    const transporter = nodemailer.default.createTransport({
-      host: env.SMTP_HOST,
-      port: env.SMTP_PORT || 465,
-      secure: (env.SMTP_PORT ?? 465) === 465,
-      auth: { user: env.SMTP_USER || 'resend', pass: env.SMTP_PASS || '' },
-    });
-    await transporter.sendMail({
-      from: EMAIL_FROM,
-      to,
-      subject,
-      html,
-      attachments: [{ filename, content: pdfBuffer }],
-    });
-  } else {
-    logger.warn('No email provider configured — invoice email not sent');
-  }
+  await sendEmail({
+    to,
+    subject,
+    html,
+    attachments: [{ filename: `invoice-${invoiceNumber}.pdf`, content: pdfBuffer }],
+  });
 }
 
 // ─── Main service function ────────────────────────────────────────────────────

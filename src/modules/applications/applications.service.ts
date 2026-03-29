@@ -18,6 +18,7 @@ import type { JWTPayload } from '@/shared/types/api';
 import type { ApplyToCampaignDTO, ListApplicationsQuery } from './applications.schema';
 
 import { createNotification } from '../notifications/notifications.service';
+import { emitToCampaign, emitToUser } from '@/socket';
 
 // ─── List applications for a campaign (brand side) ───────────────────────────
 
@@ -304,6 +305,10 @@ export async function acceptInvite(
     });
   }
 
+  // ─── Real-time update ─────────────────────────────────────────────────
+  emitToCampaign(campaignId, 'CAMPAIGN_UPDATED', { id: campaignId });
+  emitToUser(influencerUser.sub, 'APPLICATION_STATUS_CHANGED', { campaignId, status: 'accepted' });
+
   return updated;
 }
 
@@ -323,6 +328,9 @@ export async function declineInvite(campaignId: string, influencerUser: JWTPaylo
     .set({ status: 'withdrawn', updatedAt: new Date() })
     .where(eq(campaignInfluencers.id, ci.id))
     .returning();
+
+  // ─── Real-time update ─────────────────────────────────────────────────
+  emitToCampaign(campaignId, 'CAMPAIGN_UPDATED', { id: campaignId });
 
   return updated;
 }
@@ -383,6 +391,10 @@ export async function approveApplication(
     actionUrl: `/campaigns/${campaignId}`,
   });
 
+  // ─── Real-time update ─────────────────────────────────────────────────
+  emitToCampaign(campaignId, 'CAMPAIGN_UPDATED', { id: campaignId });
+  emitToUser(influencerUserId, 'APPLICATION_STATUS_CHANGED', { campaignId, status: 'accepted' });
+
   return updated;
 }
 
@@ -430,6 +442,10 @@ export async function rejectApplication(
     campaignName: campaignName,
     actionUrl: `/campaigns/${campaignId}`,
   });
+
+  // ─── Real-time update ─────────────────────────────────────────────────
+  emitToCampaign(campaignId, 'CAMPAIGN_UPDATED', { id: campaignId });
+  emitToUser(influencerUserId, 'APPLICATION_STATUS_CHANGED', { campaignId, status: 'rejected' });
 
   return updated;
 }

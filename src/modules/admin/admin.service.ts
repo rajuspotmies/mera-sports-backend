@@ -158,9 +158,32 @@ export async function listAdminCampaigns(query: ListAdminCampaignsQuery) {
 }
 
 export async function getAdminCampaignDetail(campaignId: string) {
-  const [campaign] = await db.select().from(campaigns)
-    .where(eq(campaigns.id, campaignId)).limit(1);
-  if (!campaign) throw new NotFoundError('Campaign');
+  const [row] = await db
+    .select({
+      id:               campaigns.id,
+      name:             campaigns.name,
+      description:      campaigns.description,
+      status:           campaigns.status,
+      budgetMode:       campaigns.budgetMode,
+      budgetTotal:      campaigns.budgetTotal,
+      creatorsInvited:  campaigns.creatorsInvited,
+      creatorsAccepted: campaigns.creatorsAccepted,
+      progress:         campaigns.progress,
+      launchedAt:       campaigns.launchedAt,
+      workDeadline:     campaigns.workDeadline,
+      closedAt:         campaigns.closedAt,
+      createdAt:        campaigns.createdAt,
+      updatedAt:        campaigns.updatedAt,
+      brandId:          campaigns.brandId,
+      brandName:        brandProfiles.brandName,
+      brandLogoUrl:     brandProfiles.brandLogoUrl,
+    })
+    .from(campaigns)
+    .innerJoin(brandProfiles, eq(brandProfiles.id, campaigns.brandId))
+    .where(eq(campaigns.id, campaignId))
+    .limit(1);
+
+  if (!row) throw new NotFoundError('Campaign');
 
   const influencerRows = await db
     .select({
@@ -187,7 +210,7 @@ export async function getAdminCampaignDetail(campaignId: string) {
     .where(eq(campaignInfluencers.campaignId, campaignId))
     .orderBy(sql`${campaignInfluencers.createdAt} DESC`);
 
-  return { campaign, influencers: influencerRows };
+  return { campaign: row, influencers: influencerRows };
 }
 
 // ─── Reports Management ───────────────────────────────────────────────────────

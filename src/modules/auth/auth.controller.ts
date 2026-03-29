@@ -213,3 +213,12 @@ export const resetPasswordHandler = async (req: Request, res: Response, next: Ne
     next(error);
   }
 };
+
+export const changePasswordHandler = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const result = await authService.changePassword(req.user.sub, req.body);
+    sendSuccess(res, result);
+  } catch (error) {
+    next(error);
+  }
+};

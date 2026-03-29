@@ -27,7 +27,9 @@ export async function campaignAnalyticsHandler(req: Request, res: Response): Pro
   sendSuccess(res, snapshots);
 }
 
-export async function contentAnalyticsHandler(_req: Request, res: Response): Promise<void> {
-  // TODO: implement content performance breakdown
-  sendSuccess(res, { message: 'Content analytics coming soon' });
+export async function contentAnalyticsHandler(req: Request, res: Response): Promise<void> {
+  const brandId = req.user.brandId;
+  const influencerId = req.user.influencerId;
+  const data = await analyticsService.getContentAnalytics(brandId, influencerId);
+  sendSuccess(res, data);
 }

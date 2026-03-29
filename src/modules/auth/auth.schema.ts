@@ -38,6 +38,12 @@ export const verifyOtpSchema = z.object({
   phoneNumber: z.string().min(10).max(15),
   code: z.string().length(6),
   name: z.string().min(2).max(255).optional(), // for registration
+  email: z.string().email().optional(), // for registration
+});
+
+export const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1),
+  newPassword: z.string().min(8, 'Password must be at least 8 characters'),
 });
 
 export const forgotPasswordSchema = z.object({
@@ -56,5 +62,6 @@ export type LogoutDTO = z.infer<typeof logoutSchema>;
 export type UpdateMeDTO = z.infer<typeof updateMeSchema>;
 export type SendOtpDTO = z.infer<typeof sendOtpSchema>;
 export type VerifyOtpDTO = z.infer<typeof verifyOtpSchema>;
+export type ChangePasswordDTO = z.infer<typeof changePasswordSchema>;
 export type ForgotPasswordDTO = z.infer<typeof forgotPasswordSchema>;
 export type ResetPasswordDTO = z.infer<typeof resetPasswordSchema>;

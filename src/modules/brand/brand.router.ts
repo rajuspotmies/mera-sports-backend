@@ -8,7 +8,7 @@ import { asyncHandler } from '@/shared/utils/asyncHandler';
 import { updateBrandSchema } from './brand.schema';
 import * as ctrl from './brand.controller';
 import * as authCtrl from '../auth/auth.controller';
-import { registerSchema, loginSchema, updateMeSchema, forgotPasswordSchema, resetPasswordSchema } from '../auth/auth.schema';
+import { registerSchema, loginSchema, updateMeSchema, forgotPasswordSchema, resetPasswordSchema, changePasswordSchema } from '../auth/auth.schema';
 
 const router = Router();
 
@@ -24,6 +24,7 @@ router.post('/auth/reset-password', authLimiter, validate({ body: resetPasswordS
 router.get('/auth/me', authenticate('brand_owner'), asyncHandler(authCtrl.getMeHandler));
 router.put('/auth/me', authenticate('brand_owner'), validate({ body: updateMeSchema }), asyncHandler(authCtrl.updateMeHandler));
 router.delete('/auth/me', authenticate('brand_owner'), asyncHandler(authCtrl.deleteMeHandler('brand_owner')));
+router.post('/auth/change-password', authenticate('brand_owner'), validate({ body: changePasswordSchema }), asyncHandler(authCtrl.changePasswordHandler));
 
 // ─── Protected Routes ────────────────────────────────────────────────────────
 

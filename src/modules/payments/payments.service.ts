@@ -13,6 +13,7 @@ import {
 import { eq, and, inArray, sql } from 'drizzle-orm';
 import { AppError, BadRequestError, NotFoundError, ForbiddenError } from '@/shared/errors';
 import { createNotification } from '../notifications/notifications.service';
+import { emitToCampaign } from '@/socket';
 import type { JWTPayload } from '@/shared/types/api';
 
 async function advanceCIsAfterPayment(
@@ -362,6 +363,7 @@ export async function handleCampaignPaymentSuccess(
   }
 
   await sendPaymentNotifications(campaignId, ciIds, paymentType);
+  emitToCampaign(campaignId, 'CAMPAIGN_UPDATED', { id: campaignId });
 }
 
 export async function verifyCampaignPayment(
@@ -517,6 +519,7 @@ export async function verifyCampaignPayment(
     items.map((i) => i.campaignInfluencerId),
     payment.paymentType as 'advance' | 'final'
   );
+  emitToCampaign(campaignId, 'CAMPAIGN_UPDATED', { id: campaignId });
 
   return { message: 'Payment verified and captured successfully', paymentId: payment.id, status: 'captured' };
 }

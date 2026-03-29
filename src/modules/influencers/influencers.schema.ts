@@ -3,6 +3,7 @@ import { z } from 'zod';
 export const updateInfluencerProfileSchema = z.object({
   handle: z.string().max(100).optional(),
   bio: z.string().max(2000).optional(),
+  about: z.string().max(5000).optional(),
   location: z.string().max(255).optional(),
   niches: z.array(z.string()).optional(),
   tier: z.enum(['nano', 'micro', 'mid', 'macro', 'mega']).optional(),

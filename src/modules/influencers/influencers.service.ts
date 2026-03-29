@@ -43,6 +43,7 @@ export async function getOwnInfluencerProfile(userId: string) {
       updatedAt: influencerProfiles.updatedAt,
       userName: users.name,
       userEmail: users.email,
+      userPhoneNumber: users.phoneNumber,
       userAvatarUrl: users.avatarUrl,
     })
     .from(influencerProfiles)

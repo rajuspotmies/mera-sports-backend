@@ -177,11 +177,19 @@ export async function applyToCampaign(
   if (campaignData.status !== 'active') throw new BadRequestError('Campaign is not currently accepting applications');
 
   const now = new Date();
-  if (campaignData.applicationDeadline && campaignData.applicationDeadline < now) {
-    throw new BadRequestError('Application deadline has passed');
+  if (campaignData.applicationDeadline) {
+    const deadlineEnd = new Date(campaignData.applicationDeadline);
+    deadlineEnd.setHours(23, 59, 59, 999);
+    if (deadlineEnd < now) {
+      throw new BadRequestError('Application deadline has passed');
+    }
   }
-  if (campaignData.workDeadline && campaignData.workDeadline < now) {
-    throw new BadRequestError('Work deadline has passed');
+  if (campaignData.workDeadline) {
+    const workDeadlineEnd = new Date(campaignData.workDeadline);
+    workDeadlineEnd.setHours(23, 59, 59, 999);
+    if (workDeadlineEnd < now) {
+      throw new BadRequestError('Work deadline has passed');
+    }
   }
 
   // Check for duplicate

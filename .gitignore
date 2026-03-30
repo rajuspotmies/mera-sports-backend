@@ -14,7 +14,7 @@ src/db/migrations/meta/
 
 # Uploads (local dev)
 /data/
-
+.env.local
 # Editor
 .vscode/
 .idea/

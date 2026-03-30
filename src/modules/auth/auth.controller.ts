@@ -1,7 +1,8 @@
-import type { Request, Response, NextFunction, CookieOptions } from 'express';
-import * as authService from './auth.service';
-import { sendSuccess, sendCreated } from '@/shared/utils/response';
 import { env } from '@/config/env';
+import { BadRequestError } from '@/shared/errors';
+import { sendCreated, sendSuccess } from '@/shared/utils/response';
+import type { CookieOptions, NextFunction, Request, Response } from 'express';
+import * as authService from './auth.service';
 
 type Role = 'brand_owner' | 'influencer' | 'admin';
 
@@ -142,6 +143,17 @@ export const getMeHandler = async (req: Request, res: Response, next: NextFuncti
 export const updateMeHandler = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const result = await authService.updateMe(req.user.sub, req.body);
+    sendSuccess(res, result);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const uploadMyAvatarHandler = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    if (!req.file) throw new BadRequestError('No file uploaded');
+    const key = (req.file as any).key;
+    const result = await authService.updateAvatar(req.user.sub, key);
     sendSuccess(res, result);
   } catch (error) {
     next(error);

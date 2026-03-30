@@ -1,23 +1,23 @@
 import { db } from '@/db';
 import {
-    bankDetails,
-    brandProfiles,
-    campaignInfluencers,
-    campaigns,
-    influencerProfiles,
-    reports,
-    settlements,
-    socialConnections,
-    users,
+  bankDetails,
+  brandProfiles,
+  campaignInfluencers,
+  campaigns,
+  influencerProfiles,
+  reports,
+  settlements,
+  socialConnections,
+  users,
 } from '@/db/schema';
 import { NotFoundError } from '@/shared/errors';
 import { buildPaginationMeta, getOffset, parsePagination } from '@/shared/utils/pagination';
 import { and, eq, ilike, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import type {
-    ListAdminCampaignsQuery,
-    ListReportsQuery,
-    ListUsersQuery,
-    UpdateUserStatusDTO,
+  ListAdminCampaignsQuery,
+  ListReportsQuery,
+  ListUsersQuery,
+  UpdateUserStatusDTO,
 } from './admin.schema';
 
 // ─── Dashboard Stats ──────────────────────────────────────────────────────────
@@ -197,7 +197,7 @@ export async function getAdminCampaignDetail(campaignId: string) {
     .select({
       id:               campaigns.id,
       name:             campaigns.name,
-      description:      campaigns.description,
+      brief:            campaigns.brief,
       status:           campaigns.status,
       budgetMode:       campaigns.budgetMode,
       budgetTotal:      campaigns.budgetTotal,
@@ -219,6 +219,11 @@ export async function getAdminCampaignDetail(campaignId: string) {
     .limit(1);
 
   if (!row) throw new NotFoundError('Campaign');
+
+  const campaign = {
+    ...row,
+    description: row.brief,
+  };
 
   const influencerRows = await db
     .select({
@@ -245,7 +250,7 @@ export async function getAdminCampaignDetail(campaignId: string) {
     .where(eq(campaignInfluencers.campaignId, campaignId))
     .orderBy(sql`${campaignInfluencers.createdAt} DESC`);
 
-  return { campaign: row, influencers: influencerRows };
+  return { campaign, influencers: influencerRows };
 }
 
 // ─── Reports Management ───────────────────────────────────────────────────────

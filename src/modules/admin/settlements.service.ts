@@ -1,13 +1,13 @@
 import { db } from '@/db';
 import {
-  settlements,
   campaignInfluencers,
-  influencerProfiles,
   campaigns,
+  influencerProfiles,
+  settlements,
   users,
 } from '@/db/schema';
-import { eq, and, inArray, sql } from 'drizzle-orm';
-import { NotFoundError, BadRequestError } from '@/shared/errors';
+import { BadRequestError, NotFoundError } from '@/shared/errors';
+import { and, eq, sql } from 'drizzle-orm';
 import { createNotification } from '../notifications/notifications.service';
 
 // ─── List influencers eligible for settlement ────────────────────────────────
@@ -29,6 +29,9 @@ export async function listUnsettledInfluencers(campaignId?: string) {
       campaignId: campaignInfluencers.campaignId,
       campaignName: campaigns.name,
       influencerId: campaignInfluencers.influencerId,
+      influencerName: users.name,
+      influencerEmail: users.email,
+      influencerAvatar: users.avatarUrl,
       influencerHandle: influencerProfiles.handle,
       influencerUserId: influencerProfiles.userId,
       agreedBudget: campaignInfluencers.agreedBudget,
@@ -39,6 +42,7 @@ export async function listUnsettledInfluencers(campaignId?: string) {
     })
     .from(campaignInfluencers)
     .innerJoin(influencerProfiles, eq(influencerProfiles.id, campaignInfluencers.influencerId))
+    .innerJoin(users, eq(users.id, influencerProfiles.userId))
     .innerJoin(campaigns, eq(campaigns.id, campaignInfluencers.campaignId))
     .where(and(...conditions))
     .orderBy(sql`${campaignInfluencers.completedAt} ASC`);
@@ -122,13 +126,15 @@ export async function listSettlements(campaignId?: string) {
       ciId: settlements.campaignInfluencerId,
       campaignId: campaignInfluencers.campaignId,
       campaignName: campaigns.name,
+      influencerName: users.name,
+      influencerEmail: users.email,
+      influencerAvatar: users.avatarUrl,
       influencerHandle: influencerProfiles.handle,
       amount: settlements.amount,
       method: settlements.method,
       reference: settlements.reference,
       notes: settlements.notes,
       settledAt: settlements.settledAt,
-      adminName: users.name,
     })
     .from(settlements)
     .innerJoin(
@@ -139,8 +145,8 @@ export async function listSettlements(campaignId?: string) {
       influencerProfiles,
       eq(influencerProfiles.id, campaignInfluencers.influencerId)
     )
+    .innerJoin(users, eq(users.id, influencerProfiles.userId))
     .innerJoin(campaigns, eq(campaigns.id, campaignInfluencers.campaignId))
-    .innerJoin(users, eq(users.id, settlements.adminUserId))
     .where(conditions.length ? and(...conditions) : undefined)
     .orderBy(sql`${settlements.settledAt} DESC`);
 

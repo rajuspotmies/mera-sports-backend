@@ -3,7 +3,7 @@ import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { eq, and, gt, sql } from 'drizzle-orm';
 import { db } from '@/db';
-import { users, brandProfiles, influencerProfiles, refreshTokens, campaigns, campaignInfluencers, otpCodes } from '@/db/schema';
+import { users, brandProfiles, influencerProfiles, refreshTokens, campaigns, campaignInfluencers, otpCodes, bankDetails } from '@/db/schema';
 import { emailQueue } from '@/jobs/queue';
 import { env } from '@/config/env';
 import { logger } from '@/shared/utils/logger';
@@ -357,6 +357,11 @@ export async function getMe(userId: string) {
       };
     }
   }
+  const [bank] = await db
+    .select()
+    .from(bankDetails)
+    .where(eq(bankDetails.userId, userId))
+    .limit(1);
 
   return {
     id: user.id,
@@ -367,6 +372,7 @@ export async function getMe(userId: string) {
     phoneNumber: user.phoneNumber,
     isVerified: user.isVerified,
     ...profile,
+    bankDetails: bank ?? null,
   };
 }
 

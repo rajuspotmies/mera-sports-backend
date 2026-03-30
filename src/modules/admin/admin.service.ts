@@ -47,7 +47,7 @@ export async function listUsers(query: ListUsersQuery) {
   const offset = getOffset(options);
 
   const conditions: ReturnType<typeof eq>[] = [sql`${users.role} != 'admin'` as unknown as ReturnType<typeof eq>];
-  if (query.role)     conditions.push(eq(users.role, query.role));
+  if (query.role) conditions.push(eq(users.role, query.role));
   if (query.isActive !== undefined) conditions.push(eq(users.isActive, query.isActive));
   if (query.q) {
     conditions.push(
@@ -62,15 +62,15 @@ export async function listUsers(query: ListUsersQuery) {
 
   const [rows, [{ count }]] = await Promise.all([
     db.select({
-      id:          users.id,
-      name:        users.name,
-      email:       users.email,
+      id: users.id,
+      name: users.name,
+      email: users.email,
       phoneNumber: users.phoneNumber,
-      role:        users.role,
-      isVerified:  users.isVerified,
-      isActive:    users.isActive,
-      createdAt:   users.createdAt,
-      avatarUrl:   users.avatarUrl,
+      role: users.role,
+      isVerified: users.isVerified,
+      isActive: users.isActive,
+      createdAt: users.createdAt,
+      avatarUrl: users.avatarUrl,
     })
       .from(users)
       .where(where)
@@ -125,25 +125,25 @@ export async function listAdminCampaigns(query: ListAdminCampaignsQuery) {
   const offset = getOffset(options);
 
   const conditions = [];
-  if (query.status)  conditions.push(eq(campaigns.status, query.status));
+  if (query.status) conditions.push(eq(campaigns.status, query.status));
   if (query.brandId) conditions.push(eq(campaigns.brandId, query.brandId));
 
   const where = conditions.length ? and(...conditions) : undefined;
 
   const [rows, [{ count }]] = await Promise.all([
     db.select({
-      id:               campaigns.id,
-      name:             campaigns.name,
-      type:             campaigns.type,
-      status:           campaigns.status,
-      budgetMode:       campaigns.budgetMode,
-      budgetTotal:      campaigns.budgetTotal,
-      creatorsInvited:  campaigns.creatorsInvited,
+      id: campaigns.id,
+      name: campaigns.name,
+      type: campaigns.type,
+      status: campaigns.status,
+      budgetMode: campaigns.budgetMode,
+      budgetTotal: campaigns.budgetTotal,
+      creatorsInvited: campaigns.creatorsInvited,
       creatorsAccepted: campaigns.creatorsAccepted,
-      progress:         campaigns.progress,
-      launchedAt:       campaigns.launchedAt,
-      createdAt:        campaigns.createdAt,
-      brandName:        brandProfiles.brandName,
+      progress: campaigns.progress,
+      launchedAt: campaigns.launchedAt,
+      createdAt: campaigns.createdAt,
+      brandName: brandProfiles.brandName,
     })
       .from(campaigns)
       .innerJoin(brandProfiles, eq(brandProfiles.id, campaigns.brandId))
@@ -160,23 +160,23 @@ export async function listAdminCampaigns(query: ListAdminCampaignsQuery) {
 export async function getAdminCampaignDetail(campaignId: string) {
   const [row] = await db
     .select({
-      id:               campaigns.id,
-      name:             campaigns.name,
-      description:      campaigns.description,
-      status:           campaigns.status,
-      budgetMode:       campaigns.budgetMode,
-      budgetTotal:      campaigns.budgetTotal,
-      creatorsInvited:  campaigns.creatorsInvited,
+      id: campaigns.id,
+      name: campaigns.name,
+      brief: campaigns.brief,
+      status: campaigns.status,
+      budgetMode: campaigns.budgetMode,
+      budgetTotal: campaigns.budgetTotal,
+      creatorsInvited: campaigns.creatorsInvited,
       creatorsAccepted: campaigns.creatorsAccepted,
-      progress:         campaigns.progress,
-      launchedAt:       campaigns.launchedAt,
-      workDeadline:     campaigns.workDeadline,
-      closedAt:         campaigns.closedAt,
-      createdAt:        campaigns.createdAt,
-      updatedAt:        campaigns.updatedAt,
-      brandId:          campaigns.brandId,
-      brandName:        brandProfiles.brandName,
-      brandLogoUrl:     brandProfiles.brandLogoUrl,
+      progress: campaigns.progress,
+      launchedAt: campaigns.launchedAt,
+      workDeadline: campaigns.workDeadline,
+      closedAt: campaigns.closedAt,
+      createdAt: campaigns.createdAt,
+      updatedAt: campaigns.updatedAt,
+      brandId: campaigns.brandId,
+      brandName: brandProfiles.brandName,
+      brandLogoUrl: brandProfiles.brandLogoUrl,
     })
     .from(campaigns)
     .innerJoin(brandProfiles, eq(brandProfiles.id, campaigns.brandId))
@@ -187,22 +187,22 @@ export async function getAdminCampaignDetail(campaignId: string) {
 
   const influencerRows = await db
     .select({
-      ciId:              campaignInfluencers.id,
-      status:            campaignInfluencers.status,
-      origin:            campaignInfluencers.origin,
-      agreedBudget:      campaignInfluencers.agreedBudget,
-      tierRate:          campaignInfluencers.tierRate,
-      platformFee:       campaignInfluencers.platformFee,
-      acceptedAt:        campaignInfluencers.acceptedAt,
-      completedAt:       campaignInfluencers.completedAt,
-      settledAt:         campaignInfluencers.settledAt,
-      influencerId:      influencerProfiles.id,
-      handle:            influencerProfiles.handle,
-      tier:              influencerProfiles.tier,
-      followerCount:     influencerProfiles.followerCount,
-      influencerUserId:  influencerProfiles.userId,
-      influencerName:    users.name,
-      influencerAvatar:  users.avatarUrl,
+      ciId: campaignInfluencers.id,
+      status: campaignInfluencers.status,
+      origin: campaignInfluencers.origin,
+      agreedBudget: campaignInfluencers.agreedBudget,
+      tierRate: campaignInfluencers.tierRate,
+      platformFee: campaignInfluencers.platformFee,
+      acceptedAt: campaignInfluencers.acceptedAt,
+      completedAt: campaignInfluencers.completedAt,
+      settledAt: campaignInfluencers.settledAt,
+      influencerId: influencerProfiles.id,
+      handle: influencerProfiles.handle,
+      tier: influencerProfiles.tier,
+      followerCount: influencerProfiles.followerCount,
+      influencerUserId: influencerProfiles.userId,
+      influencerName: users.name,
+      influencerAvatar: users.avatarUrl,
     })
     .from(campaignInfluencers)
     .innerJoin(influencerProfiles, eq(influencerProfiles.id, campaignInfluencers.influencerId))
@@ -220,25 +220,25 @@ export async function listAdminReports(query: ListReportsQuery) {
   const offset = getOffset(options);
 
   const conditions = [];
-  if (query.resolved === true)  conditions.push(isNotNull(reports.resolvedAt));
+  if (query.resolved === true) conditions.push(isNotNull(reports.resolvedAt));
   if (query.resolved === false) conditions.push(isNull(reports.resolvedAt));
-  if (query.reason)             conditions.push(eq(reports.reason, query.reason));
+  if (query.reason) conditions.push(eq(reports.reason, query.reason));
 
   const where = conditions.length ? and(...conditions) : undefined;
 
   const [rows, [{ count }]] = await Promise.all([
     db.select({
-      id:           reports.id,
-      targetId:     reports.targetId,
-      targetType:   reports.targetType,
-      reason:       reports.reason,
-      description:  reports.description,
-      contextType:  reports.contextType,
-      contextId:    reports.contextId,
-      createdAt:    reports.createdAt,
-      resolvedAt:   reports.resolvedAt,
-      resolvedBy:   reports.resolvedBy,
-      reporterName:  users.name,
+      id: reports.id,
+      targetId: reports.targetId,
+      targetType: reports.targetType,
+      reason: reports.reason,
+      description: reports.description,
+      contextType: reports.contextType,
+      contextId: reports.contextId,
+      createdAt: reports.createdAt,
+      resolvedAt: reports.resolvedAt,
+      resolvedBy: reports.resolvedBy,
+      reporterName: users.name,
       reporterEmail: users.email,
     })
       .from(reports)
@@ -279,6 +279,5 @@ export async function getInfluencerBankDetails(influencerUserId: string) {
     .where(eq(bankDetails.userId, influencerUserId))
     .limit(1);
 
-  if (!row) throw new NotFoundError('Bank details for this influencer');
-  return row;
+  return row ?? null;
 }

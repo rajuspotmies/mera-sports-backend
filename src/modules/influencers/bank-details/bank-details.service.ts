@@ -11,8 +11,7 @@ export async function getOwnBankDetails(userId: string) {
     .where(eq(bankDetails.userId, userId))
     .limit(1);
 
-  if (!row) throw new NotFoundError('Bank details');
-  return row;
+  return row ?? null;
 }
 
 export async function createBankDetails(userId: string, dto: UpsertBankDetailsDTO) {

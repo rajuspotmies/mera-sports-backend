@@ -7,6 +7,7 @@ import {
   campaignInfluencers,
   brandProfiles,
   influencerPortfolios,
+  bankDetails,
 } from '@/db/schema';
 import { NotFoundError, ConflictError, BadRequestError, ForbiddenError } from '@/shared/errors';
 import type { InfluencerProfile } from '@/db/schema';

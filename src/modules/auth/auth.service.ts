@@ -3,20 +3,26 @@ import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { eq, and, gt, sql } from 'drizzle-orm';
 import { db } from '@/db';
-import { users, brandProfiles, influencerProfiles, refreshTokens, campaigns, campaignInfluencers, otpCodes } from '@/db/schema';
+import { users, brandProfiles, influencerProfiles, refreshTokens, campaigns, campaignInfluencers, otpCodes, bankDetails } from '@/db/schema';
 import { emailQueue } from '@/jobs/queue';
 import { env } from '@/config/env';
-import { logger } from '@/shared/utils/logger';
+import { db } from '@/db';
+import { brandProfiles, campaignInfluencers, campaigns, influencerProfiles, otpCodes, refreshTokens, users } from '@/db/schema';
 import {
-  ConflictError,
-  UnauthorizedError,
-  NotFoundError,
-  BadRequestError,
+    BadRequestError,
+    ConflictError,
+    NotFoundError,
+    UnauthorizedError,
 } from '@/shared/errors';
-import { sendWhatsAppOTP } from '../notifications/whatsapp.service';
-import { sendEmail } from '@/shared/utils/email';
 import type { JWTPayload } from '@/shared/types/api';
-import type { RegisterDTO, LoginDTO, UpdateMeDTO, SendOtpDTO, VerifyOtpDTO, ForgotPasswordDTO, ResetPasswordDTO, ChangePasswordDTO } from './auth.schema';
+import { sendEmail } from '@/shared/utils/email';
+import { logger } from '@/shared/utils/logger';
+import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
+import { and, eq, gt, sql } from 'drizzle-orm';
+import jwt from 'jsonwebtoken';
+import { sendWhatsAppOTP } from '../notifications/whatsapp.service';
+import type { ChangePasswordDTO, ForgotPasswordDTO, LoginDTO, RegisterDTO, ResetPasswordDTO, SendOtpDTO, UpdateMeDTO, VerifyOtpDTO } from './auth.schema';
 
 // ─── Token helpers ─────────────────────────────────────────────────────────
 
@@ -357,6 +363,11 @@ export async function getMe(userId: string) {
       };
     }
   }
+  const [bank] = await db
+    .select()
+    .from(bankDetails)
+    .where(eq(bankDetails.userId, userId))
+    .limit(1);
 
   return {
     id: user.id,
@@ -367,6 +378,7 @@ export async function getMe(userId: string) {
     phoneNumber: user.phoneNumber,
     isVerified: user.isVerified,
     ...profile,
+    bankDetails: bank ?? null,
   };
 }
 
@@ -381,6 +393,19 @@ export async function updateMe(userId: string, dto: UpdateMeDTO) {
   const [updated] = await db
     .update(users)
     .set(updateData)
+    .where(eq(users.id, userId))
+    .returning();
+
+  return updated;
+}
+
+export async function updateAvatar(userId: string, avatarUrl: string) {
+  const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+  if (!user) throw new NotFoundError('User');
+
+  const [updated] = await db
+    .update(users)
+    .set({ avatarUrl, updatedAt: new Date() })
     .where(eq(users.id, userId))
     .returning();
 

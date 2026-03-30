@@ -1,22 +1,23 @@
-import { eq, and, ilike, or, sql, isNull, isNotNull } from 'drizzle-orm';
 import { db } from '@/db';
 import {
-  users,
-  campaigns,
-  campaignInfluencers,
-  influencerProfiles,
-  brandProfiles,
-  settlements,
-  reports,
   bankDetails,
+  brandProfiles,
+  campaignInfluencers,
+  campaigns,
+  influencerProfiles,
+  reports,
+  settlements,
+  socialConnections,
+  users,
 } from '@/db/schema';
 import { NotFoundError } from '@/shared/errors';
-import { parsePagination, buildPaginationMeta, getOffset } from '@/shared/utils/pagination';
+import { buildPaginationMeta, getOffset, parsePagination } from '@/shared/utils/pagination';
+import { and, eq, ilike, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import type {
-  ListUsersQuery,
-  UpdateUserStatusDTO,
   ListAdminCampaignsQuery,
   ListReportsQuery,
+  ListUsersQuery,
+  UpdateUserStatusDTO,
 } from './admin.schema';
 
 // ─── Dashboard Stats ──────────────────────────────────────────────────────────
@@ -24,20 +25,41 @@ import type {
 export async function getDashboardStats() {
   const [
     [{ totalUsers }],
+    [{ totalBrands }],
+    [{ totalInfluencers }],
     [{ activeCampaigns }],
     [{ pendingSettlements }],
     [{ totalSettled }],
+    [{ openReports }],
+    [{ newUsersThisMonth }],
   ] = await Promise.all([
     db.select({ totalUsers: sql<number>`count(*)::int` }).from(users)
       .where(sql`${users.role} != 'admin'`),
+    db.select({ totalBrands: sql<number>`count(*)::int` }).from(users)
+      .where(eq(users.role, 'brand_owner')),
+    db.select({ totalInfluencers: sql<number>`count(*)::int` }).from(users)
+      .where(eq(users.role, 'influencer')),
     db.select({ activeCampaigns: sql<number>`count(*)::int` }).from(campaigns)
       .where(eq(campaigns.status, 'active')),
     db.select({ pendingSettlements: sql<number>`count(*)::int` }).from(campaignInfluencers)
       .where(eq(campaignInfluencers.status, 'completed')),
     db.select({ totalSettled: sql<string>`coalesce(sum(amount), 0)::text` }).from(settlements),
+    db.select({ openReports: sql<number>`count(*)::int` }).from(reports)
+      .where(isNull(reports.resolvedAt)),
+    db.select({ newUsersThisMonth: sql<number>`count(*)::int` }).from(users)
+      .where(sql`${users.role} != 'admin' and ${users.createdAt} >= date_trunc('month', now())`),
   ]);
 
-  return { totalUsers, activeCampaigns, pendingSettlements, totalSettled };
+  return {
+    totalUsers,
+    totalBrands,
+    totalInfluencers,
+    activeCampaigns,
+    pendingSettlements,
+    totalSettled,
+    openReports,
+    newUsersThisMonth,
+  };
 }
 
 // ─── User Management ──────────────────────────────────────────────────────────
@@ -47,7 +69,7 @@ export async function listUsers(query: ListUsersQuery) {
   const offset = getOffset(options);
 
   const conditions: ReturnType<typeof eq>[] = [sql`${users.role} != 'admin'` as unknown as ReturnType<typeof eq>];
-  if (query.role)     conditions.push(eq(users.role, query.role));
+  if (query.role) conditions.push(eq(users.role, query.role));
   if (query.isActive !== undefined) conditions.push(eq(users.isActive, query.isActive));
   if (query.q) {
     conditions.push(
@@ -62,15 +84,15 @@ export async function listUsers(query: ListUsersQuery) {
 
   const [rows, [{ count }]] = await Promise.all([
     db.select({
-      id:          users.id,
-      name:        users.name,
-      email:       users.email,
+      id: users.id,
+      name: users.name,
+      email: users.email,
       phoneNumber: users.phoneNumber,
-      role:        users.role,
-      isVerified:  users.isVerified,
-      isActive:    users.isActive,
-      createdAt:   users.createdAt,
-      avatarUrl:   users.avatarUrl,
+      role: users.role,
+      isVerified: users.isVerified,
+      isActive: users.isActive,
+      createdAt: users.createdAt,
+      avatarUrl: users.avatarUrl,
     })
       .from(users)
       .where(where)
@@ -88,17 +110,30 @@ export async function getUserDetail(userId: string) {
   if (!user) throw new NotFoundError('User');
 
   let profile: unknown = null;
+  let socialProfiles: unknown[] = [];
   if (user.role === 'influencer') {
     const [inf] = await db.select().from(influencerProfiles)
       .where(eq(influencerProfiles.userId, userId)).limit(1);
     profile = inf ?? null;
+
+    socialProfiles = await db
+      .select({
+        platform: socialConnections.platform,
+        platformHandle: socialConnections.platformHandle,
+        followerCount: socialConnections.followerCount,
+        engagementRate: socialConnections.engagementRate,
+        isConnected: socialConnections.isConnected,
+        updatedAt: socialConnections.updatedAt,
+      })
+      .from(socialConnections)
+      .where(eq(socialConnections.userId, userId));
   } else if (user.role === 'brand_owner') {
     const [brand] = await db.select().from(brandProfiles)
       .where(eq(brandProfiles.userId, userId)).limit(1);
     profile = brand ?? null;
   }
 
-  return { user, profile };
+  return { user, profile, socialProfiles };
 }
 
 export async function updateUserStatus(userId: string, dto: UpdateUserStatusDTO) {
@@ -125,25 +160,25 @@ export async function listAdminCampaigns(query: ListAdminCampaignsQuery) {
   const offset = getOffset(options);
 
   const conditions = [];
-  if (query.status)  conditions.push(eq(campaigns.status, query.status));
+  if (query.status) conditions.push(eq(campaigns.status, query.status));
   if (query.brandId) conditions.push(eq(campaigns.brandId, query.brandId));
 
   const where = conditions.length ? and(...conditions) : undefined;
 
   const [rows, [{ count }]] = await Promise.all([
     db.select({
-      id:               campaigns.id,
-      name:             campaigns.name,
-      type:             campaigns.type,
-      status:           campaigns.status,
-      budgetMode:       campaigns.budgetMode,
-      budgetTotal:      campaigns.budgetTotal,
-      creatorsInvited:  campaigns.creatorsInvited,
+      id: campaigns.id,
+      name: campaigns.name,
+      type: campaigns.type,
+      status: campaigns.status,
+      budgetMode: campaigns.budgetMode,
+      budgetTotal: campaigns.budgetTotal,
+      creatorsInvited: campaigns.creatorsInvited,
       creatorsAccepted: campaigns.creatorsAccepted,
-      progress:         campaigns.progress,
-      launchedAt:       campaigns.launchedAt,
-      createdAt:        campaigns.createdAt,
-      brandName:        brandProfiles.brandName,
+      progress: campaigns.progress,
+      launchedAt: campaigns.launchedAt,
+      createdAt: campaigns.createdAt,
+      brandName: brandProfiles.brandName,
     })
       .from(campaigns)
       .innerJoin(brandProfiles, eq(brandProfiles.id, campaigns.brandId))
@@ -160,23 +195,23 @@ export async function listAdminCampaigns(query: ListAdminCampaignsQuery) {
 export async function getAdminCampaignDetail(campaignId: string) {
   const [row] = await db
     .select({
-      id:               campaigns.id,
-      name:             campaigns.name,
-      description:      campaigns.description,
-      status:           campaigns.status,
-      budgetMode:       campaigns.budgetMode,
-      budgetTotal:      campaigns.budgetTotal,
-      creatorsInvited:  campaigns.creatorsInvited,
+      id: campaigns.id,
+      name: campaigns.name,
+      brief: campaigns.brief,
+      status: campaigns.status,
+      budgetMode: campaigns.budgetMode,
+      budgetTotal: campaigns.budgetTotal,
+      creatorsInvited: campaigns.creatorsInvited,
       creatorsAccepted: campaigns.creatorsAccepted,
-      progress:         campaigns.progress,
-      launchedAt:       campaigns.launchedAt,
-      workDeadline:     campaigns.workDeadline,
-      closedAt:         campaigns.closedAt,
-      createdAt:        campaigns.createdAt,
-      updatedAt:        campaigns.updatedAt,
-      brandId:          campaigns.brandId,
-      brandName:        brandProfiles.brandName,
-      brandLogoUrl:     brandProfiles.brandLogoUrl,
+      progress: campaigns.progress,
+      launchedAt: campaigns.launchedAt,
+      workDeadline: campaigns.workDeadline,
+      closedAt: campaigns.closedAt,
+      createdAt: campaigns.createdAt,
+      updatedAt: campaigns.updatedAt,
+      brandId: campaigns.brandId,
+      brandName: brandProfiles.brandName,
+      brandLogoUrl: brandProfiles.brandLogoUrl,
     })
     .from(campaigns)
     .innerJoin(brandProfiles, eq(brandProfiles.id, campaigns.brandId))
@@ -185,24 +220,29 @@ export async function getAdminCampaignDetail(campaignId: string) {
 
   if (!row) throw new NotFoundError('Campaign');
 
+  const campaign = {
+    ...row,
+    description: row.brief,
+  };
+
   const influencerRows = await db
     .select({
-      ciId:              campaignInfluencers.id,
-      status:            campaignInfluencers.status,
-      origin:            campaignInfluencers.origin,
-      agreedBudget:      campaignInfluencers.agreedBudget,
-      tierRate:          campaignInfluencers.tierRate,
-      platformFee:       campaignInfluencers.platformFee,
-      acceptedAt:        campaignInfluencers.acceptedAt,
-      completedAt:       campaignInfluencers.completedAt,
-      settledAt:         campaignInfluencers.settledAt,
-      influencerId:      influencerProfiles.id,
-      handle:            influencerProfiles.handle,
-      tier:              influencerProfiles.tier,
-      followerCount:     influencerProfiles.followerCount,
-      influencerUserId:  influencerProfiles.userId,
-      influencerName:    users.name,
-      influencerAvatar:  users.avatarUrl,
+      ciId: campaignInfluencers.id,
+      status: campaignInfluencers.status,
+      origin: campaignInfluencers.origin,
+      agreedBudget: campaignInfluencers.agreedBudget,
+      tierRate: campaignInfluencers.tierRate,
+      platformFee: campaignInfluencers.platformFee,
+      acceptedAt: campaignInfluencers.acceptedAt,
+      completedAt: campaignInfluencers.completedAt,
+      settledAt: campaignInfluencers.settledAt,
+      influencerId: influencerProfiles.id,
+      handle: influencerProfiles.handle,
+      tier: influencerProfiles.tier,
+      followerCount: influencerProfiles.followerCount,
+      influencerUserId: influencerProfiles.userId,
+      influencerName: users.name,
+      influencerAvatar: users.avatarUrl,
     })
     .from(campaignInfluencers)
     .innerJoin(influencerProfiles, eq(influencerProfiles.id, campaignInfluencers.influencerId))
@@ -210,7 +250,7 @@ export async function getAdminCampaignDetail(campaignId: string) {
     .where(eq(campaignInfluencers.campaignId, campaignId))
     .orderBy(sql`${campaignInfluencers.createdAt} DESC`);
 
-  return { campaign: row, influencers: influencerRows };
+  return { campaign, influencers: influencerRows };
 }
 
 // ─── Reports Management ───────────────────────────────────────────────────────
@@ -220,25 +260,25 @@ export async function listAdminReports(query: ListReportsQuery) {
   const offset = getOffset(options);
 
   const conditions = [];
-  if (query.resolved === true)  conditions.push(isNotNull(reports.resolvedAt));
+  if (query.resolved === true) conditions.push(isNotNull(reports.resolvedAt));
   if (query.resolved === false) conditions.push(isNull(reports.resolvedAt));
-  if (query.reason)             conditions.push(eq(reports.reason, query.reason));
+  if (query.reason) conditions.push(eq(reports.reason, query.reason));
 
   const where = conditions.length ? and(...conditions) : undefined;
 
   const [rows, [{ count }]] = await Promise.all([
     db.select({
-      id:           reports.id,
-      targetId:     reports.targetId,
-      targetType:   reports.targetType,
-      reason:       reports.reason,
-      description:  reports.description,
-      contextType:  reports.contextType,
-      contextId:    reports.contextId,
-      createdAt:    reports.createdAt,
-      resolvedAt:   reports.resolvedAt,
-      resolvedBy:   reports.resolvedBy,
-      reporterName:  users.name,
+      id: reports.id,
+      targetId: reports.targetId,
+      targetType: reports.targetType,
+      reason: reports.reason,
+      description: reports.description,
+      contextType: reports.contextType,
+      contextId: reports.contextId,
+      createdAt: reports.createdAt,
+      resolvedAt: reports.resolvedAt,
+      resolvedBy: reports.resolvedBy,
+      reporterName: users.name,
       reporterEmail: users.email,
     })
       .from(reports)
@@ -279,6 +319,5 @@ export async function getInfluencerBankDetails(influencerUserId: string) {
     .where(eq(bankDetails.userId, influencerUserId))
     .limit(1);
 
-  if (!row) throw new NotFoundError('Bank details for this influencer');
-  return row;
+  return row ?? null;
 }

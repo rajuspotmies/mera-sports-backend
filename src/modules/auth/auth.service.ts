@@ -1,3 +1,10 @@
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
+import { eq, and, gt, sql } from 'drizzle-orm';
+import { db } from '@/db';
+import { users, brandProfiles, influencerProfiles, refreshTokens, campaigns, campaignInfluencers, otpCodes, bankDetails } from '@/db/schema';
+import { emailQueue } from '@/jobs/queue';
 import { env } from '@/config/env';
 import { db } from '@/db';
 import { brandProfiles, campaignInfluencers, campaigns, influencerProfiles, otpCodes, refreshTokens, users } from '@/db/schema';
@@ -356,6 +363,11 @@ export async function getMe(userId: string) {
       };
     }
   }
+  const [bank] = await db
+    .select()
+    .from(bankDetails)
+    .where(eq(bankDetails.userId, userId))
+    .limit(1);
 
   return {
     id: user.id,
@@ -366,6 +378,7 @@ export async function getMe(userId: string) {
     phoneNumber: user.phoneNumber,
     isVerified: user.isVerified,
     ...profile,
+    bankDetails: bank ?? null,
   };
 }
 

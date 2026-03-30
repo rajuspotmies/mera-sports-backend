@@ -103,21 +103,6 @@ router.get(
   asyncHandler(ctrl.searchInfluencersHandler)
 );
 
-router.get(
-  '/:id',
-  authenticate(),
-  asyncHandler(ctrl.getInfluencerByIdHandler)
-);
-
-// ─── Invites (brand sends — accepts 1–50 influencerIds in one call) ──────────
-router.post(
-  '/invite',
-  authenticate(),
-  authorize('brand_owner', 'admin'),
-  validate({ body: inviteInfluencersSchema }),
-  asyncHandler(ctrl.inviteInfluencersHandler)
-);
-
 // ─── Bank Details (influencer manages own) ───────────────────────────────────
 import { upsertBankDetailsSchema } from './bank-details/bank-details.schema';
 import * as bankDetailsCtrl from './bank-details/bank-details.controller';
@@ -146,6 +131,12 @@ router.delete(
   '/bank-details',
   authenticate('influencer'),
   asyncHandler(bankDetailsCtrl.deleteBankDetailsHandler)
+);
+
+router.get(
+  '/:id',
+  authenticate(),
+  asyncHandler(ctrl.getInfluencerByIdHandler)
 );
 
 export default router;

@@ -153,120 +153,52 @@ export async function createCampaign(brandUser: JWTPayload, dto: CreateCampaignD
   const name = basics?.campaignName ?? dto.name ?? '';
   const type = basics?.type ?? dto.type ?? 'influencer';
   const visibility = basics?.visibility ?? dto.visibility ?? 'private';
-  const objective =
-    basics?.objective ?? dto.objective ?? budget?.productDetails ?? dto.budget?.productDetails;
+  const objective = basics?.objective ?? dto.objective ?? budget?.productDetails ?? '';
 
-  const budgetMode =
-    budget?.budgetMode ?? dto.budgetMode ?? dto.budget?.mode ?? 'paid';
+  const budgetMode = budget?.budgetMode ?? 'paid';
 
   const budgetTierPricing =
-    budget?.tierConfig?.map((t) => ({ tier: t.tier, rate: t.amount })) ??
-    dto.budgetTierPricing ??
-    dto.budget?.tierPricing?.map((t) => ({ tier: t.tier, rate: t.amount })) ??
-    [];
+    budget?.tierConfig?.map((t: any) => ({ tier: t.tier, rate: t.amount })) ?? [];
 
-  const budgetTotal =
-    (budget?.totalBudget ?? dto.budgetTotal ?? dto.budget?.total)?.toString();
+  const budgetTotal = budget?.totalBudget?.toString() || '0';
+  const platformFeePercent = budget?.platformFeePercent?.toString() || '10';
 
-  const platformFeePercent =
-    (budget?.platformFeePercent ??
-      dto.platformFeePercent ??
-      dto.budget?.platformFeePercent)?.toString() || '10';
+  const location = basics?.location ?? '';
+  const niches = basics?.niche ? [basics.niche] : [];
+  const creatorSizes = budget?.creatorSizes ?? [];
 
-  const location =
-    basics?.location ?? dto.location ?? dto.productLocation;
+  const brief = deliverables?.brandGuidelines ?? '';
+  const referenceUrls = deliverables?.references 
+    ? (Array.isArray(deliverables.references) ? deliverables.references : [deliverables.references]) 
+    : [];
 
-  const niches =
-    (basics?.niche ? [basics.niche] : undefined) ?? dto.niches ?? [];
+  const hashtags = meta?.hashtags ?? [];
+  const deliverablesArray = deliverables?.contentTypes?.map((c: string) => ({ type: c, count: 1 })) ?? [];
+  const proofOfWorkReq = deliverables?.proofOfWorkRequired ?? false;
 
-  const creatorSizes =
-    (budget?.creatorSizes && budget.creatorSizes.length > 0
-      ? budget.creatorSizes
-      : undefined) ??
-    dto.creatorSizes ??
-    dto.budget?.creatorSizes ??
-    [];
+  const normalizeDeadline = (dateStr?: string) => {
+    if (!dateStr) return undefined;
+    const d = new Date(dateStr);
+    d.setHours(23, 59, 59, 999);
+    return d;
+  };
 
-  const brief =
-    deliverables?.brandGuidelines ??
-    dto.brief ??
-    dto.requirements?.brandGuidelines;
+  const applicationDeadline = normalizeDeadline(budget?.applicationDeadline);
+  const workDeadline = normalizeDeadline(budget?.workDeadline);
+  const scriptDeadline = normalizeDeadline(budget?.scriptDeadline);
 
-  const referenceUrls =
-    (Array.isArray(deliverables?.references)
-      ? deliverables?.references
-      : deliverables?.references
-        ? [deliverables.references]
-        : undefined) ??
-    dto.referenceUrls ??
-    (dto.requirements?.references
-      ? dto.requirements.references.split('\n').filter(Boolean)
-      : undefined) ??
-    [];
-
-  const hashtags = meta?.hashtags ?? dto.hashtags ?? [];
-
-  const deliverablesArray =
-    dto.deliverables && dto.deliverables.length > 0
-      ? dto.deliverables
-      : dto.requirements?.contentTypes?.map((c) => ({ type: c, count: 1 })) ??
-        [];
-
-  const proofOfWorkReq =
-    deliverables?.proofOfWorkRequired ??
-    meta?.proofOfWorkReq ??
-    dto.proofOfWorkReq ??
-    false;
-
-  const applicationDeadlineStr =
-    budget?.applicationDeadline ?? dto.timeline?.applicationDeadline ?? dto.deadline;
-  const workDeadlineStr =
-    budget?.workDeadline ?? dto.timeline?.workDeadline;
-  const scriptDeadlineStr =
-    budget?.scriptDeadline ?? dto.timeline?.scriptDeadline;
-
-  const applicationDeadline = applicationDeadlineStr
-    ? new Date(applicationDeadlineStr)
-    : undefined;
-  const workDeadline = workDeadlineStr ? new Date(workDeadlineStr) : undefined;
-  const scriptDeadline = scriptDeadlineStr ? new Date(scriptDeadlineStr) : undefined;
-
-  const thumbnailUrl = basics?.coverImageUrl ?? dto.thumbnailUrl;
-
-  const platform =
-    deliverables?.platform ?? dto.requirements?.platform;
-
-  const contentTypes =
-    deliverables?.contentTypes ??
-    dto.requirements?.contentTypes ??
-    [];
-
-  const postingType =
-    deliverables?.postingType ?? dto.requirements?.postingType;
-
-  const usageRights =
-    deliverables?.usageRights ?? undefined;
-
-  const scriptType =
-    deliverables?.scriptType ?? dto.requirements?.scriptType;
-
-  const scriptFlow =
-    deliverables?.scriptFlow ?? undefined;
-
-  const scriptFileKey =
-    deliverables?.scriptFileName ?? undefined;
-
-  const mixMode =
-    budget?.mixMode ?? dto.budget?.mixMode;
-
-  const selectedTier =
-    budget?.selectedTier ?? dto.budget?.selectedTier;
-
-  const productDetails =
-    budget?.productDetails ?? dto.budget?.productDetails;
-
-  const status =
-    meta?.status ?? dto.status ?? 'draft';
+  const thumbnailUrl = basics?.coverImageUrl ?? (dto as any).thumbnailUrl;
+  const platform = deliverables?.platform;
+  const contentTypes = deliverables?.contentTypes ?? [];
+  const postingType = deliverables?.postingType;
+  const usageRights = deliverables?.usageRights;
+  const scriptType = deliverables?.scriptType;
+  const scriptFlow = deliverables?.scriptFlow;
+  const scriptFileKey = deliverables?.scriptFileName;
+  const mixMode = budget?.mixMode;
+  const selectedTier = budget?.selectedTier;
+  const productDetails = budget?.productDetails;
+  const status = meta?.status ?? dto.status ?? 'draft';
 
   const [campaign] = await db
     .insert(campaigns)
@@ -284,8 +216,8 @@ export async function createCampaign(brandUser: JWTPayload, dto: CreateCampaignD
       niches,
       creatorSizes,
       brief,
-      dos: dto.dos || [],
-      donts: dto.donts || [],
+      dos: (dto as any).dos || [],
+      donts: (dto as any).donts || [],
       referenceUrls,
       hashtags,
       deliverables: deliverablesArray,
@@ -332,143 +264,66 @@ export async function updateCampaign(
   const budget = dto.budget;
   const meta = dto.meta;
 
-  // ─── New structured payload fields (basics / deliverables / budget / meta) ───
+  const normalizeDeadline = (dateStr?: string) => {
+    if (!dateStr) return undefined;
+    const d = new Date(dateStr);
+    d.setHours(23, 59, 59, 999);
+    return d;
+  };
 
-  // Basics
+  // Structured fields
   if (basics?.campaignName !== undefined) mappedUpdate.name = basics.campaignName;
   if (basics?.type !== undefined) mappedUpdate.type = basics.type;
   if (basics?.visibility !== undefined) mappedUpdate.visibility = basics.visibility;
-  if (
-    basics?.objective !== undefined ||
-    budget?.productDetails !== undefined
-  ) {
-    mappedUpdate.objective = basics?.objective ?? budget?.productDetails;
-  }
+  if (basics?.objective !== undefined) mappedUpdate.objective = basics.objective;
   if (basics?.location !== undefined) mappedUpdate.location = basics.location;
   if (basics?.niche !== undefined) mappedUpdate.niches = [basics.niche];
+  if (basics?.coverImageUrl !== undefined) mappedUpdate.thumbnailUrl = basics.coverImageUrl;
 
-  // Deliverables / creative
   if (deliverables?.brandGuidelines !== undefined) mappedUpdate.brief = deliverables.brandGuidelines;
   if (deliverables?.references !== undefined) {
-    if (Array.isArray(deliverables.references)) {
-      mappedUpdate.referenceUrls = deliverables.references;
-    } else if (deliverables.references) {
-      mappedUpdate.referenceUrls = [deliverables.references];
-    } else {
-      mappedUpdate.referenceUrls = [];
-    }
+    mappedUpdate.referenceUrls = Array.isArray(deliverables.references) ? deliverables.references : [deliverables.references];
   }
-  if (meta?.referenceUrls !== undefined) mappedUpdate.referenceUrls = meta.referenceUrls;
-  if (meta?.hashtags !== undefined) mappedUpdate.hashtags = meta.hashtags;
-
-  if (deliverables?.proofOfWorkRequired !== undefined) {
-    mappedUpdate.proofOfWorkReq = deliverables.proofOfWorkRequired;
-  }
-  if (meta?.proofOfWorkReq !== undefined) {
-    mappedUpdate.proofOfWorkReq = meta.proofOfWorkReq;
-  }
-
+  if (deliverables?.proofOfWorkRequired !== undefined) mappedUpdate.proofOfWorkReq = deliverables.proofOfWorkRequired;
   if (deliverables?.platform !== undefined) mappedUpdate.platform = deliverables.platform;
   if (deliverables?.contentTypes !== undefined) mappedUpdate.contentTypes = deliverables.contentTypes;
   if (deliverables?.postingType !== undefined) mappedUpdate.postingType = deliverables.postingType;
   if (deliverables?.usageRights !== undefined) mappedUpdate.usageRights = deliverables.usageRights;
   if (deliverables?.scriptType !== undefined) mappedUpdate.scriptType = deliverables.scriptType;
   if (deliverables?.scriptFlow !== undefined) mappedUpdate.scriptFlow = deliverables.scriptFlow;
-  if (deliverables?.scriptFileName !== undefined) mappedUpdate.scriptFileKey = deliverables.scriptFileName || null;
+  if (deliverables?.scriptFileName !== undefined) mappedUpdate.scriptFileKey = deliverables.scriptFileName;
 
-  // Budget
-  if (budget?.budgetMode !== undefined || dto.budgetMode !== undefined || dto.budget?.mode !== undefined) {
-    mappedUpdate.budgetMode = budget?.budgetMode ?? dto.budgetMode ?? dto.budget?.mode;
+  if (budget?.budgetMode !== undefined) mappedUpdate.budgetMode = budget.budgetMode;
+  if (budget?.tierConfig !== undefined) {
+    mappedUpdate.budgetTierPricing = budget.tierConfig.map((t: any) => ({ tier: t.tier, rate: t.amount }));
   }
-  if (budget?.tierConfig !== undefined || dto.budgetTierPricing?.length || dto.budget?.tierPricing) {
-    if (budget?.tierConfig) {
-      mappedUpdate.budgetTierPricing = budget.tierConfig.map((t) => ({ tier: t.tier, rate: t.amount }));
-    } else if (dto.budgetTierPricing?.length) {
-      mappedUpdate.budgetTierPricing = dto.budgetTierPricing;
-    } else if (dto.budget?.tierPricing) {
-      mappedUpdate.budgetTierPricing = dto.budget.tierPricing.map((t) => ({ tier: t.tier, rate: t.amount }));
-    }
-  }
-  if (budget?.totalBudget !== undefined || dto.budgetTotal !== undefined || dto.budget?.total !== undefined) {
-    mappedUpdate.budgetTotal = (budget?.totalBudget ?? dto.budgetTotal ?? dto.budget?.total)?.toString();
-  }
-  if (
-    budget?.platformFeePercent !== undefined ||
-    dto.platformFeePercent !== undefined ||
-    dto.budget?.platformFeePercent !== undefined
-  ) {
-    mappedUpdate.platformFeePercent = (
-      budget?.platformFeePercent ??
-      dto.platformFeePercent ??
-      dto.budget?.platformFeePercent
-    )?.toString();
-  }
+  if (budget?.totalBudget !== undefined) mappedUpdate.budgetTotal = budget.totalBudget.toString();
+  if (budget?.platformFeePercent !== undefined) mappedUpdate.platformFeePercent = budget.platformFeePercent.toString();
+  if (budget?.creatorSizes !== undefined) mappedUpdate.creatorSizes = budget.creatorSizes;
+  if (budget?.mixMode !== undefined) mappedUpdate.mixMode = budget.mixMode;
+  if (budget?.selectedTier !== undefined) mappedUpdate.selectedTier = budget.selectedTier;
+  if (budget?.productDetails !== undefined) mappedUpdate.productDetails = budget.productDetails;
 
-  if (budget?.creatorSizes !== undefined || dto.creatorSizes?.length || dto.budget?.creatorSizes) {
-    mappedUpdate.creatorSizes =
-      budget?.creatorSizes ??
-      (dto.creatorSizes?.length ? dto.creatorSizes : dto.budget?.creatorSizes) ??
-      [];
+  if (budget?.applicationDeadline !== undefined) {
+    const d = normalizeDeadline(budget.applicationDeadline);
+    mappedUpdate.deadline = d;
+    mappedUpdate.applicationDeadline = d;
   }
+  if (budget?.workDeadline !== undefined) mappedUpdate.workDeadline = normalizeDeadline(budget.workDeadline);
+  if (budget?.scriptDeadline !== undefined) mappedUpdate.scriptDeadline = normalizeDeadline(budget.scriptDeadline);
 
-  if (budget?.mixMode !== undefined || dto.budget?.mixMode !== undefined) {
-    mappedUpdate.mixMode = budget?.mixMode ?? dto.budget?.mixMode;
-  }
-  if (budget?.selectedTier !== undefined || dto.budget?.selectedTier !== undefined) {
-    mappedUpdate.selectedTier = budget?.selectedTier ?? dto.budget?.selectedTier;
-  }
-  if (budget?.productDetails !== undefined || dto.budget?.productDetails !== undefined) {
-    mappedUpdate.productDetails = budget?.productDetails ?? dto.budget?.productDetails;
-  }
+  if (meta?.status !== undefined) mappedUpdate.status = meta.status;
+  if (meta?.referenceUrls !== undefined) mappedUpdate.referenceUrls = meta.referenceUrls;
+  if (meta?.hashtags !== undefined) mappedUpdate.hashtags = meta.hashtags;
+  if (meta?.proofOfWorkReq !== undefined) mappedUpdate.proofOfWorkReq = meta.proofOfWorkReq;
 
-  if (budget?.applicationDeadline || dto.timeline?.applicationDeadline || dto.deadline) {
-    const dl = budget?.applicationDeadline ?? dto.timeline?.applicationDeadline ?? dto.deadline;
-    mappedUpdate.deadline = dl ? new Date(dl) : null;
-    mappedUpdate.applicationDeadline = dl ? new Date(dl) : null;
-  }
-  if (budget?.workDeadline || dto.timeline?.workDeadline) {
-    const wd = budget?.workDeadline ?? dto.timeline?.workDeadline;
-    mappedUpdate.workDeadline = wd ? new Date(wd) : null;
-  }
-  if (budget?.scriptDeadline || dto.timeline?.scriptDeadline) {
-    const sd = budget?.scriptDeadline ?? dto.timeline?.scriptDeadline;
-    mappedUpdate.scriptDeadline = sd ? new Date(sd) : null;
-  }
-
-  // Thumbnail
-  if (basics?.coverImageUrl !== undefined || (dto as any).thumbnailUrl !== undefined) {
-    mappedUpdate.thumbnailUrl = basics?.coverImageUrl ?? (dto as any).thumbnailUrl;
-  }
-
-  // Status (meta or legacy)
-  if (meta?.status !== undefined || dto.status !== undefined) {
-    mappedUpdate.status = meta?.status ?? dto.status;
-  }
-
-  // Legacy for backward compatibility (kept below)
+  // Legacy flat fields
   if (dto.name !== undefined) mappedUpdate.name = dto.name;
   if (dto.type !== undefined) mappedUpdate.type = dto.type;
   if (dto.visibility !== undefined) mappedUpdate.visibility = dto.visibility;
   if (dto.status !== undefined) mappedUpdate.status = dto.status;
-  if (dto.objective !== undefined || dto.budget?.productDetails !== undefined) mappedUpdate.objective = dto.objective || dto.budget?.productDetails;
-  if (dto.budgetMode !== undefined || dto.budget?.mode !== undefined) mappedUpdate.budgetMode = dto.budgetMode || dto.budget?.mode;
-  if (dto.budgetTierPricing?.length || dto.budget?.tierPricing) mappedUpdate.budgetTierPricing = dto.budgetTierPricing?.length ? dto.budgetTierPricing : dto.budget?.tierPricing?.map(t => ({ tier: t.tier, rate: t.amount })) || [];
-  if (dto.budgetTotal !== undefined || dto.budget?.total !== undefined) mappedUpdate.budgetTotal = (dto.budgetTotal ?? dto.budget?.total)?.toString();
-  if (dto.platformFeePercent !== undefined || dto.budget?.platformFeePercent !== undefined) mappedUpdate.platformFeePercent = (dto.platformFeePercent ?? dto.budget?.platformFeePercent)?.toString();
-  if (dto.location !== undefined || dto.productLocation !== undefined) mappedUpdate.location = dto.location || dto.productLocation;
-  if (dto.niches !== undefined) mappedUpdate.niches = dto.niches;
-  if (dto.creatorSizes?.length || dto.budget?.creatorSizes) mappedUpdate.creatorSizes = dto.creatorSizes?.length ? dto.creatorSizes : dto.budget?.creatorSizes || [];
-  if (dto.brief !== undefined || dto.requirements?.brandGuidelines !== undefined) mappedUpdate.brief = dto.brief || dto.requirements?.brandGuidelines;
-  if (dto.dos !== undefined) mappedUpdate.dos = dto.dos;
-  if (dto.donts !== undefined) mappedUpdate.donts = dto.donts;
-  if (dto.referenceUrls?.length || dto.requirements?.references) mappedUpdate.referenceUrls = dto.referenceUrls?.length ? dto.referenceUrls : (dto.requirements?.references ? dto.requirements.references.split('\n').filter(Boolean) : []);
-  if (dto.hashtags !== undefined) mappedUpdate.hashtags = dto.hashtags;
-  if (dto.deliverables?.length || dto.requirements?.contentTypes) mappedUpdate.deliverables = dto.deliverables?.length ? dto.deliverables : dto.requirements?.contentTypes?.map(c => ({ type: c, count: 1 })) || [];
-  if (dto.proofOfWorkReq !== undefined) mappedUpdate.proofOfWorkReq = dto.proofOfWorkReq;
-  if (dto.deadline || dto.timeline?.applicationDeadline) {
-    const dl = dto.deadline || dto.timeline?.applicationDeadline;
-    mappedUpdate.deadline = dl ? new Date(dl) : undefined;
-  }
+  if (dto.objective !== undefined) mappedUpdate.objective = dto.objective;
+
   mappedUpdate.updatedAt = new Date();
 
   // Make sure we remove undefined keys

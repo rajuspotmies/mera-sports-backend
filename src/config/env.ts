@@ -45,6 +45,10 @@ const envSchema = z.object({
   CASHFREE_SECRET_KEY: z.string().optional(),
   CASHFREE_ENV: z.enum(['sandbox', 'production']).default('sandbox'),
   CASHFREE_WEBHOOK_SECRET: z.string().optional(),
+  CASHFREE_DEFAULT_PHONE: z.string().optional(), // Optional override for Cashfree order customer_phone
+
+  // Backend public URL (used for Cashfree notify_url webhook)
+  BACKEND_URL: z.string().optional(),
 
   // Email (Resend API preferred; SMTP as fallback)
   SMTP_API_KEY: z.string().optional(),

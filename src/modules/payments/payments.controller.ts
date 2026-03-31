@@ -55,3 +55,9 @@ export async function cashfreeWebhookHandler(req: Request, res: Response) {
   await handleWebhook(req.body, signature, timestamp, rawBody);
   res.json({ status: 'ok' });
 }
+
+export async function reconcilePaymentHandler(req: Request, res: Response) {
+  const { campaignId } = req.params;
+  const result = await paymentsService.reconcileStuckInfluencers(campaignId, req.user);
+  sendSuccess(res, result);
+}

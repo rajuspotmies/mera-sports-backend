@@ -37,10 +37,14 @@ export async function listApplications(
   if (query.status) {
     conditions.push(eq(campaignInfluencers.status, query.status));
   } else {
-    // Only return applications/invites that have not progressed solidly into execution
-    // payment_pending is included so brands can see applications stuck awaiting payment
-    const earlyStatuses = ['invited', 'applied', 'negotiating', 'accepted', 'payment_pending', 'rejected', 'withdrawn'];
-    conditions.push(inArray(campaignInfluencers.status, earlyStatuses as any));
+    // Show the full influencer pipeline — early stage AND active/post-payment stages
+    // so the brand can always see every influencer's current status in this campaign
+    const allVisibleStatuses = [
+      'invited', 'applied', 'negotiating', 'accepted', 'payment_pending',
+      'paid', 'script_pending', 'script_review', 'work_pending', 'work_review',
+      'completed', 'settled', 'rejected', 'withdrawn',
+    ];
+    conditions.push(inArray(campaignInfluencers.status, allVisibleStatuses as any));
   }
 
   const where = and(...conditions);
@@ -58,6 +62,11 @@ export async function listApplications(
       applicationNote: campaignInfluencers.applicationNote,
       appliedAt: campaignInfluencers.appliedAt,
       acceptedAt: campaignInfluencers.acceptedAt,
+      paidAt: campaignInfluencers.paidAt,
+      finalPaidAt: campaignInfluencers.finalPaidAt,
+      completedAt: campaignInfluencers.completedAt,
+      settledAt: campaignInfluencers.settledAt,
+      updatedAt: campaignInfluencers.updatedAt,
       createdAt: campaignInfluencers.createdAt,
       // Influencer info
       handle: influencerProfiles.handle,
@@ -66,6 +75,7 @@ export async function listApplications(
       followerCount: influencerProfiles.followerCount,
       engagementRate: influencerProfiles.engagementRate,
       niches: influencerProfiles.niches,
+      platforms: influencerProfiles.platforms,
       userName: users.name,
       userAvatarUrl: users.avatarUrl,
     })
@@ -575,6 +585,7 @@ export async function confirmProductReceived(
       ci: campaignInfluencers,
       campaignName: campaigns.name,
       budgetMode: campaigns.budgetMode,
+      scriptType: campaigns.scriptType,
       brandUserId: brandProfiles.userId,
     })
     .from(campaignInfluencers)
@@ -589,15 +600,21 @@ export async function confirmProductReceived(
     .limit(1);
 
   if (!ciData) throw new NotFoundError('Application');
-  const { ci, campaignName, budgetMode, brandUserId } = ciData;
+  const { ci, campaignName, budgetMode, brandUserId, scriptType = 'creator' } = ciData;
 
   if (budgetMode !== 'product' && budgetMode !== 'paid_product') {
     throw new BadRequestError('This campaign does not involve a product');
   }
 
+  const nextStatus = scriptType === 'creator' ? 'script_pending' : 'work_pending';
+
   const [updated] = await db
     .update(campaignInfluencers)
-    .set({ productReceivedAt: new Date(), updatedAt: new Date() })
+    .set({ 
+      status: nextStatus as any, 
+      productReceivedAt: new Date(), 
+      updatedAt: new Date() 
+    })
     .where(eq(campaignInfluencers.id, ci.id))
     .returning();
 
@@ -609,6 +626,59 @@ export async function confirmProductReceived(
     campaignId,
     campaignName,
     actionUrl: `/campaigns/${campaignId}/applications`,
+  });
+
+  return updated;
+}
+
+export async function forceProductDelivered(
+  campaignId: string,
+  appId: string,
+  brandUser: JWTPayload
+) {
+  await assertBrandOwnsCampaign(campaignId, brandUser);
+
+  const [ciData] = await db
+    .select({
+      ci: campaignInfluencers,
+      influencerUserId: influencerProfiles.userId,
+      campaignName: campaigns.name,
+      budgetMode: campaigns.budgetMode,
+      scriptType: campaigns.scriptType,
+    })
+    .from(campaignInfluencers)
+    .innerJoin(influencerProfiles, eq(influencerProfiles.id, campaignInfluencers.influencerId))
+    .innerJoin(campaigns, eq(campaigns.id, campaignInfluencers.campaignId))
+    .where(and(eq(campaignInfluencers.id, appId), eq(campaignInfluencers.campaignId, campaignId)))
+    .limit(1);
+
+  if (!ciData) throw new NotFoundError('Application');
+  const { ci, influencerUserId, campaignName, budgetMode, scriptType } = ciData;
+
+  if (budgetMode !== 'product' && budgetMode !== 'paid_product') {
+    throw new BadRequestError('This campaign does not involve a product');
+  }
+
+  const nextStatus = scriptType === 'creator' ? 'script_pending' : 'work_pending';
+
+  const [updated] = await db
+    .update(campaignInfluencers)
+    .set({ 
+      status: nextStatus as any, 
+      productReceivedAt: new Date(), 
+      updatedAt: new Date() 
+    })
+    .where(eq(campaignInfluencers.id, appId))
+    .returning();
+
+  await createNotification({
+    userId: influencerUserId,
+    type: 'system',
+    title: `"${campaignName}" - Product Confirmed Delivered`,
+    message: 'The brand has confirmed product delivery. You can now proceed!',
+    campaignId,
+    campaignName,
+    actionUrl: `/campaigns/${campaignId}`,
   });
 
   return updated;

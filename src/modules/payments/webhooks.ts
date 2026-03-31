@@ -44,7 +44,9 @@ export async function handleWebhook(payload: any, signature: string, timestamp: 
   if (
     eventType === 'PAYMENT_FAILED_WEBHOOK' ||
     eventType === 'payment.failed' ||
-    eventType === 'ORDER_EXPIRED'
+    eventType === 'ORDER_EXPIRED' ||
+    eventType === 'USER_DROPPED_WEBHOOK' ||
+    eventType === 'user.dropped'
   ) {
     const orderId =
       payload?.data?.order?.order_id ??

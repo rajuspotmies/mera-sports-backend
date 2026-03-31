@@ -66,6 +66,11 @@ export async function markProductShippedHandler(req: Request, res: Response): Pr
   sendSuccess(res, result);
 }
 
+export async function forceProductDeliveredHandler(req: Request, res: Response): Promise<void> {
+  const result = await appService.forceProductDelivered(req.params.campaignId, req.params.appId, req.user);
+  sendSuccess(res, result);
+}
+
 export async function confirmProductReceivedHandler(req: Request, res: Response): Promise<void> {
   const result = await appService.confirmProductReceived(req.params.campaignId, req.user);
   sendSuccess(res, result);

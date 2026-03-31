@@ -33,18 +33,23 @@ function getCashfree(): InstanceType<typeof Cashfree> {
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────
 
-async function advanceCIsAfterPayment(ciIds: string[], campaignId: string) {
-  const [campaign] = await db
-    .select({ scriptType: campaigns.scriptType })
+async function advanceCIsAfterPayment(ciIds: string[], campaignId: string, txDB: any = db) {
+  const [campaign] = await txDB
+    .select({ scriptType: campaigns.scriptType, budgetMode: campaigns.budgetMode })
     .from(campaigns)
     .where(eq(campaigns.id, campaignId))
     .limit(1);
 
-  const nextStatus = campaign?.scriptType === 'creator' ? 'script_pending' : 'work_pending';
+  let nextStatus = campaign?.scriptType === 'creator' ? 'script_pending' : 'work_pending';
+  
+  // If the campaign sends a product, intercept the flow and await product delivery
+  if (campaign?.budgetMode === 'product' || campaign?.budgetMode === 'paid_product') {
+    nextStatus = 'product_pending';
+  }
 
-  await db
+  await txDB
     .update(campaignInfluencers)
-    .set({ status: nextStatus, updatedAt: new Date() })
+    .set({ status: nextStatus as any, updatedAt: new Date() })
     .where(inArray(campaignInfluencers.id, ciIds));
 }
 
@@ -228,12 +233,12 @@ export async function initiatePaymentRound(
     order_currency: 'INR',
     customer_details: {
       customer_id: brandUser.sub,
-      customer_phone: '9999999999',
+      customer_phone: env.CASHFREE_DEFAULT_PHONE ?? '9999999999',
       customer_name: 'Brand Owner',
     },
     order_meta: {
-      return_url: `${(env as any).FRONTEND_URLS?.[0] ?? 'http://localhost:5173'}/campaigns/${campaignId}?tab=applications&payment=done`,
-      notify_url: `${(env as any).FRONTEND_URLS?.[0] ?? 'http://localhost:3000'}/api/v1/webhooks/cashfree`,
+      return_url: `${env.FRONTEND_URLS?.[0] ?? 'http://localhost:5173'}/campaigns/${campaignId}?tab=applications&payment=done`,
+      notify_url: `${env.BACKEND_URL ?? 'http://localhost:3000'}/api/v1/payments/webhook/cashfree`,
     },
     order_note: JSON.stringify({ campaignId, round, paymentType }),
   };
@@ -359,17 +364,11 @@ export async function verifyCampaignPayment(
         .set({ status: 'paid', paidAt: new Date(), updatedAt: new Date() })
         .where(inArray(campaignInfluencers.id, selectedCiIds));
 
-      const [camp] = await tx
-        .select({ scriptType: campaigns.scriptType })
-        .from(campaigns)
-        .where(eq(campaigns.id, campaignId))
-        .limit(1);
-
-      const nextStatus = camp?.scriptType === 'creator' ? 'script_pending' : 'work_pending';
-      await tx
-        .update(campaignInfluencers)
-        .set({ status: nextStatus, updatedAt: new Date() })
-        .where(inArray(campaignInfluencers.id, selectedCiIds));
+      // Use the centralized advance function which correctly handles:
+      // - product/paid_product → product_pending
+      // - brand-script campaigns → work_pending
+      // - creator-script campaigns → script_pending
+      await advanceCIsAfterPayment(selectedCiIds, campaignId, tx);
     } else {
       await tx
         .update(campaignInfluencers)
@@ -474,10 +473,13 @@ export async function cancelPaymentRound(
     const ciIds = items.map((i) => i.campaignInfluencerId);
     if (!ciIds.length) return;
 
+    // Determine rollback status based on payment type
+    const rollbackStatus = payment.paymentType === 'advance' ? 'accepted' : 'work_review';
+
     // Roll back only CIs still stuck at payment_pending
     await tx
       .update(campaignInfluencers)
-      .set({ status: 'accepted', updatedAt: new Date() })
+      .set({ status: rollbackStatus, updatedAt: new Date() })
       .where(
         and(
           inArray(campaignInfluencers.id, ciIds),
@@ -488,7 +490,7 @@ export async function cancelPaymentRound(
 
   emitToCampaign(payment.campaignId, 'CAMPAIGN_UPDATED', { id: payment.campaignId });
 
-  return { message: 'Payment cancelled and influencer statuses reverted to accepted.' };
+  return { message: 'Payment cancelled and influencer statuses reverted to their previous state.' };
 }
 
 // ─── Webhook: Cashfree confirms payment ──────────────────────────────────────
@@ -497,7 +499,8 @@ export async function handleCampaignPaymentSuccess(
   cfOrderId: string,
   cfPaymentId?: string
 ) {
-  const [payment] = await db
+  // Try to find a pending payment first (normal case)
+  let [payment] = await db
     .select()
     .from(campaignPayments)
     .where(
@@ -508,8 +511,57 @@ export async function handleCampaignPaymentSuccess(
     )
     .limit(1);
 
-  if (!payment) return;
+  // If not found as pending, check if it's already captured but influencers are still stuck
+  // (happens when verify succeeded for the payment record but the CI update failed mid-transaction)
+  if (!payment) {
+    const [capturedPayment] = await db
+      .select()
+      .from(campaignPayments)
+      .where(eq(campaignPayments.razorpayOrderId, cfOrderId))
+      .limit(1);
 
+    if (!capturedPayment || capturedPayment.status !== 'captured') return;
+
+    // Check if any influencers are still stuck at payment_pending for this payment round
+    const items = await db
+      .select({ campaignInfluencerId: campaignPaymentItems.campaignInfluencerId })
+      .from(campaignPaymentItems)
+      .where(eq(campaignPaymentItems.campaignPaymentId, capturedPayment.id));
+
+    const ciIds = items.map((i) => i.campaignInfluencerId);
+    if (ciIds.length === 0) return;
+
+    const stuckCIs = await db
+      .select({ id: campaignInfluencers.id })
+      .from(campaignInfluencers)
+      .where(
+        and(
+          inArray(campaignInfluencers.id, ciIds),
+          eq(campaignInfluencers.status, 'payment_pending')
+        )
+      );
+
+    if (stuckCIs.length === 0) return; // Already correctly advanced — nothing to do
+
+    // Reconcile: advance the stuck influencers
+    const stuckIds = stuckCIs.map((c) => c.id);
+    if (capturedPayment.paymentType === 'advance') {
+      await db
+        .update(campaignInfluencers)
+        .set({ status: 'paid', paidAt: new Date(), updatedAt: new Date() })
+        .where(inArray(campaignInfluencers.id, stuckIds));
+      await advanceCIsAfterPayment(stuckIds, capturedPayment.campaignId);
+    } else {
+      await db
+        .update(campaignInfluencers)
+        .set({ status: 'completed', finalPaidAt: new Date(), completedAt: new Date(), updatedAt: new Date() })
+        .where(inArray(campaignInfluencers.id, stuckIds));
+    }
+    emitToCampaign(capturedPayment.campaignId, 'CAMPAIGN_UPDATED', { id: capturedPayment.campaignId });
+    return;
+  }
+
+  // Normal path: payment was pending — mark captured and advance influencers
   await db
     .update(campaignPayments)
     .set({
@@ -581,9 +633,11 @@ export async function handleCampaignPaymentFailure(cfOrderId: string) {
     const ciIds = items.map((i) => i.campaignInfluencerId);
     if (!ciIds.length) return;
 
+    const rollbackStatus = payment.paymentType === 'advance' ? 'accepted' : 'work_review';
+
     await tx
       .update(campaignInfluencers)
-      .set({ status: 'accepted', updatedAt: new Date() })
+      .set({ status: rollbackStatus, updatedAt: new Date() })
       .where(
         and(
           inArray(campaignInfluencers.id, ciIds),
@@ -591,6 +645,8 @@ export async function handleCampaignPaymentFailure(cfOrderId: string) {
         )
       );
   });
+
+  emitToCampaign(payment.campaignId, 'CAMPAIGN_UPDATED', { id: payment.campaignId });
 }
 
 // ─── Get payment summary ──────────────────────────────────────────────────────
@@ -689,4 +745,88 @@ export async function getPaymentRoundDetails(
     .where(eq(campaignPaymentItems.campaignPaymentId, paymentId));
 
   return { payment, items };
+}
+
+// ─── Reconcile stuck influencers for a campaign ───────────────────────────────
+// Fixes the case where campaign_payment.status = 'captured' but the
+// linked influencers are still stuck at 'payment_pending' due to a
+// partial failure (timing issue between verify call and DB transaction).
+
+export async function reconcileStuckInfluencers(
+  campaignId: string,
+  requester: JWTPayload
+) {
+  await assertBrandOwnsCampaign(campaignId, requester);
+
+  // Find all captured payments for this campaign
+  const capturedPayments = await db
+    .select()
+    .from(campaignPayments)
+    .where(
+      and(
+        eq(campaignPayments.campaignId, campaignId),
+        eq(campaignPayments.status, 'captured')
+      )
+    );
+
+  if (capturedPayments.length === 0) {
+    return { fixed: 0, message: 'No captured payments found for this campaign.' };
+  }
+
+  let totalFixed = 0;
+
+  for (const payment of capturedPayments) {
+    // Get all influencer IDs tied to this payment round
+    const items = await db
+      .select({ campaignInfluencerId: campaignPaymentItems.campaignInfluencerId })
+      .from(campaignPaymentItems)
+      .where(eq(campaignPaymentItems.campaignPaymentId, payment.id));
+
+    const ciIds = items.map((i) => i.campaignInfluencerId);
+    if (ciIds.length === 0) continue;
+
+    // Find influencers that are still stuck at payment_pending
+    const stuckCIs = await db
+      .select({ id: campaignInfluencers.id })
+      .from(campaignInfluencers)
+      .where(
+        and(
+          inArray(campaignInfluencers.id, ciIds),
+          eq(campaignInfluencers.status, 'payment_pending')
+        )
+      );
+
+    if (stuckCIs.length === 0) continue;
+
+    const stuckIds = stuckCIs.map((c) => c.id);
+
+    if (payment.paymentType === 'advance') {
+      await db
+        .update(campaignInfluencers)
+        .set({ status: 'paid', paidAt: new Date(), updatedAt: new Date() })
+        .where(inArray(campaignInfluencers.id, stuckIds));
+      await advanceCIsAfterPayment(stuckIds, campaignId);
+    } else {
+      await db
+        .update(campaignInfluencers)
+        .set({
+          status: 'completed',
+          finalPaidAt: new Date(),
+          completedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(inArray(campaignInfluencers.id, stuckIds));
+    }
+
+    totalFixed += stuckIds.length;
+  }
+
+  emitToCampaign(campaignId, 'CAMPAIGN_UPDATED', { id: campaignId });
+
+  return {
+    fixed: totalFixed,
+    message: totalFixed > 0
+      ? `Reconciled ${totalFixed} stuck influencer(s) to their correct post-payment status.`
+      : 'All influencers are already in the correct state.',
+  };
 }

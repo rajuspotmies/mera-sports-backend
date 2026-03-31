@@ -3,7 +3,7 @@ import { authenticate } from '@/middleware/authenticate';
 import { authorize } from '@/middleware/authorize';
 import { validate } from '@/middleware/validate';
 import { asyncHandler } from '@/shared/utils/asyncHandler';
-import { initiatePaymentRoundSchema, verifyPaymentSchema, cancelPaymentSchema } from './payments.schema';
+import { initiatePaymentRoundSchema, verifyPaymentSchema } from './payments.schema';
 import * as ctrl from './payments.controller';
 
 const router = Router({ mergeParams: true });
@@ -27,10 +27,10 @@ router.post(
 );
 
 // Cancel a pending payment round (user closed the modal mid-payment)
+// paymentId is read from URL params — no body validation needed
 router.patch(
   '/:paymentId/cancel',
   authorize('brand_owner', 'admin'),
-  validate({ body: cancelPaymentSchema }),
   asyncHandler(ctrl.cancelPaymentHandler)
 );
 
@@ -39,6 +39,13 @@ router.get(
   '/summary',
   authorize('brand_owner', 'admin'),
   asyncHandler(ctrl.getPaymentSummaryHandler)
+);
+
+// Reconcile stuck influencers — fixes payment_pending CIs after a captured payment
+router.post(
+  '/reconcile',
+  authorize('brand_owner', 'admin'),
+  asyncHandler(ctrl.reconcilePaymentHandler)
 );
 
 // Payment round details

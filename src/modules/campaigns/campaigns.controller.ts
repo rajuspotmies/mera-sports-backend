@@ -7,7 +7,7 @@ import { getPublicUrl } from '@/config/s3';
 export async function listCampaignsHandler(req: Request, res: Response): Promise<void> {
   // brand_owner sees their own; influencer sees discover endpoint
   if (req.user.role === 'influencer') {
-    const { campaigns, meta } = await campaignsService.discoverCampaigns(req.query as never);
+    const { campaigns, meta } = await campaignsService.discoverCampaigns(req.query as never, req.user);
     sendSuccess(res, campaigns, 200, meta);
     return;
   }
@@ -16,7 +16,7 @@ export async function listCampaignsHandler(req: Request, res: Response): Promise
 }
 
 export async function discoverCampaignsHandler(req: Request, res: Response): Promise<void> {
-  const { campaigns, meta } = await campaignsService.discoverCampaigns(req.query as never);
+  const { campaigns, meta } = await campaignsService.discoverCampaigns(req.query as never, req.user);
   sendSuccess(res, campaigns, 200, meta);
 }
 

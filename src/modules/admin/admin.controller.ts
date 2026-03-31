@@ -1,5 +1,6 @@
 import type { Request, Response } from 'express';
 import * as adminService from './admin.service';
+import * as campaignsService from '../campaigns/campaigns.service';
 import { sendSuccess } from '@/shared/utils/response';
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
@@ -35,6 +36,11 @@ export async function listAdminCampaignsHandler(req: Request, res: Response) {
 
 export async function getAdminCampaignDetailHandler(req: Request, res: Response) {
   const result = await adminService.getAdminCampaignDetail(req.params.id);
+  sendSuccess(res, result);
+}
+
+export async function updateCampaignHandler(req: Request, res: Response) {
+  const result = await campaignsService.updateCampaign(req.params.id, req.user, req.body);
   sendSuccess(res, result);
 }
 

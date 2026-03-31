@@ -49,7 +49,7 @@ export async function listCampaignsForBrand(brandUser: JWTPayload, query: ListCa
 
 // ─── Influencer: discover public active campaigns ─────────────────────────────
 
-export async function discoverCampaigns(query: ListCampaignsQuery) {
+export async function discoverCampaigns(query: ListCampaignsQuery, requester?: JWTPayload) {
   const { page, limit } = parsePagination(query);
   const offset = getOffset({ page, limit });
 
@@ -61,6 +61,16 @@ export async function discoverCampaigns(query: ListCampaignsQuery) {
 
   const where = and(...conditions);
 
+  let influencerTier: string | null = null;
+  if (requester?.role === 'influencer' && requester.influencerId) {
+    const [inf] = await db
+      .select({ tier: influencerProfiles.tier })
+      .from(influencerProfiles)
+      .where(eq(influencerProfiles.id, requester.influencerId))
+      .limit(1);
+    influencerTier = inf?.tier ?? null;
+  }
+
   const rows = await db
     .select({
       id: campaigns.id,
@@ -68,9 +78,17 @@ export async function discoverCampaigns(query: ListCampaignsQuery) {
       type: campaigns.type,
       objective: campaigns.objective,
       budgetMode: campaigns.budgetMode,
+      budgetTierPricing: campaigns.budgetTierPricing,
+      platformFeePercent: campaigns.platformFeePercent,
       niches: campaigns.niches,
       creatorSizes: campaigns.creatorSizes,
       brief: campaigns.brief,
+      dos: campaigns.dos,
+      donts: campaigns.donts,
+      hashtags: campaigns.hashtags,
+      referenceUrls: campaigns.referenceUrls,
+      platform: campaigns.platform,
+      contentTypes: campaigns.contentTypes,
       deliverables: campaigns.deliverables,
       deadline: campaigns.deadline,
       thumbnailUrl: campaigns.thumbnailUrl,
@@ -85,12 +103,14 @@ export async function discoverCampaigns(query: ListCampaignsQuery) {
     .limit(limit)
     .offset(offset);
 
+  const formattedRows = rows.map((r) => formatCampaignForInfluencer(r, influencerTier));
+
   const [{ count }] = await db
     .select({ count: sql<number>`count(*)::int` })
     .from(campaigns)
     .where(where);
 
-  return { campaigns: rows, meta: buildPaginationMeta(count, { page, limit }) };
+  return { campaigns: formattedRows, meta: buildPaginationMeta(count, { page, limit }) };
 }
 
 // ─── Get single campaign ──────────────────────────────────────────────────────
@@ -109,9 +129,10 @@ export async function getCampaignById(id: string, requester: JWTPayload) {
     }
 
     if (requester.role === 'influencer' && requester.influencerId) {
-      const [ci] = await db
-        .select({ id: campaignInfluencers.id })
+      const [ciData] = await db
+        .select({ id: campaignInfluencers.id, tier: influencerProfiles.tier })
         .from(campaignInfluencers)
+        .innerJoin(influencerProfiles, eq(influencerProfiles.id, campaignInfluencers.influencerId))
         .where(
           and(
             eq(campaignInfluencers.campaignId, campaign.id),
@@ -120,22 +141,32 @@ export async function getCampaignById(id: string, requester: JWTPayload) {
         )
         .limit(1);
 
-      if (ci) return stripTierPricingForInfluencer(campaign);
+      if (ciData) return formatCampaignForInfluencer(campaign, ciData.tier);
     }
 
     throw new ForbiddenError('This campaign is private');
   }
 
-  if (requester.role === 'influencer') {
-    return stripTierPricingForInfluencer(campaign);
+  if (requester.role === 'influencer' && requester.influencerId) {
+    const [inf] = await db
+      .select({ tier: influencerProfiles.tier })
+      .from(influencerProfiles)
+      .where(eq(influencerProfiles.id, requester.influencerId))
+      .limit(1);
+    return formatCampaignForInfluencer(campaign, inf?.tier ?? null);
   }
 
   return campaign;
 }
 
-function stripTierPricingForInfluencer(campaign: Campaign) {
+function formatCampaignForInfluencer(campaign: any, tier: string | null) {
   const { budgetTierPricing, budgetTotal, ...safe } = campaign;
-  return safe;
+  let tierPrice = null;
+  if (tier && Array.isArray(budgetTierPricing)) {
+    const entry = budgetTierPricing.find((p: any) => p.tier === tier);
+    tierPrice = entry ? entry.rate : null;
+  }
+  return { ...safe, tierPrice };
 }
 
 // ─── Create ───────────────────────────────────────────────────────────────────

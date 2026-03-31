@@ -1,20 +1,20 @@
-import { Router } from 'express';
 import { authenticate } from '@/middleware/authenticate';
-import { authorize } from '@/middleware/authorize';
+import { authLimiter, uploadLimiter } from '@/middleware/rateLimiter';
+import { setUploadFolder, upload } from '@/middleware/upload';
 import { validate } from '@/middleware/validate';
-import { authLimiter } from '@/middleware/rateLimiter';
 import { asyncHandler } from '@/shared/utils/asyncHandler';
+import { Router } from 'express';
 import * as authCtrl from '../auth/auth.controller';
 import { loginSchema, updateMeSchema } from '../auth/auth.schema';
-import { settleInfluencerSchema, listSettlementsQuerySchema } from './settlements.schema';
-import * as settlementsCtrl from './settlements.controller';
-import {
-  listUsersQuerySchema,
-  updateUserStatusSchema,
-  listAdminCampaignsQuerySchema,
-  listReportsQuerySchema,
-} from './admin.schema';
 import * as adminCtrl from './admin.controller';
+import {
+    listAdminCampaignsQuerySchema,
+    listReportsQuerySchema,
+    listUsersQuerySchema,
+    updateUserStatusSchema,
+} from './admin.schema';
+import * as settlementsCtrl from './settlements.controller';
+import { listSettlementsQuerySchema, settleInfluencerSchema } from './settlements.schema';
 
 const router = Router();
 
@@ -26,6 +26,14 @@ router.post('/auth/logout', asyncHandler(authCtrl.logoutHandler('admin')));
 
 router.get('/auth/me', authenticate('admin'), asyncHandler(authCtrl.getMeHandler));
 router.put('/auth/me', authenticate('admin'), validate({ body: updateMeSchema }), asyncHandler(authCtrl.updateMeHandler));
+router.post(
+  '/auth/me/avatar',
+  authenticate('admin'),
+  uploadLimiter,
+  setUploadFolder('avatars'),
+  upload.single('file'),
+  asyncHandler(authCtrl.uploadMyAvatarHandler)
+);
 router.delete('/auth/me', authenticate('admin'), asyncHandler(authCtrl.deleteMeHandler('admin')));
 
 // ─── Settlement Routes (admin only) ─────────────────────────────────────────

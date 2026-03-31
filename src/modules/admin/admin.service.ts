@@ -1,22 +1,23 @@
-import { eq, and, ilike, or, sql, isNull, isNotNull } from 'drizzle-orm';
 import { db } from '@/db';
 import {
-  users,
-  campaigns,
-  campaignInfluencers,
-  influencerProfiles,
-  brandProfiles,
-  settlements,
-  reports,
   bankDetails,
+  brandProfiles,
+  campaignInfluencers,
+  campaigns,
+  influencerProfiles,
+  reports,
+  settlements,
+  socialConnections,
+  users,
 } from '@/db/schema';
 import { NotFoundError } from '@/shared/errors';
-import { parsePagination, buildPaginationMeta, getOffset } from '@/shared/utils/pagination';
+import { buildPaginationMeta, getOffset, parsePagination } from '@/shared/utils/pagination';
+import { and, eq, ilike, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import type {
-  ListUsersQuery,
-  UpdateUserStatusDTO,
   ListAdminCampaignsQuery,
   ListReportsQuery,
+  ListUsersQuery,
+  UpdateUserStatusDTO,
 } from './admin.schema';
 
 // ─── Dashboard Stats ──────────────────────────────────────────────────────────
@@ -24,20 +25,41 @@ import type {
 export async function getDashboardStats() {
   const [
     [{ totalUsers }],
+    [{ totalBrands }],
+    [{ totalInfluencers }],
     [{ activeCampaigns }],
     [{ pendingSettlements }],
     [{ totalSettled }],
+    [{ openReports }],
+    [{ newUsersThisMonth }],
   ] = await Promise.all([
     db.select({ totalUsers: sql<number>`count(*)::int` }).from(users)
       .where(sql`${users.role} != 'admin'`),
+    db.select({ totalBrands: sql<number>`count(*)::int` }).from(users)
+      .where(eq(users.role, 'brand_owner')),
+    db.select({ totalInfluencers: sql<number>`count(*)::int` }).from(users)
+      .where(eq(users.role, 'influencer')),
     db.select({ activeCampaigns: sql<number>`count(*)::int` }).from(campaigns)
       .where(eq(campaigns.status, 'active')),
     db.select({ pendingSettlements: sql<number>`count(*)::int` }).from(campaignInfluencers)
       .where(eq(campaignInfluencers.status, 'completed')),
     db.select({ totalSettled: sql<string>`coalesce(sum(amount), 0)::text` }).from(settlements),
+    db.select({ openReports: sql<number>`count(*)::int` }).from(reports)
+      .where(isNull(reports.resolvedAt)),
+    db.select({ newUsersThisMonth: sql<number>`count(*)::int` }).from(users)
+      .where(sql`${users.role} != 'admin' and ${users.createdAt} >= date_trunc('month', now())`),
   ]);
 
-  return { totalUsers, activeCampaigns, pendingSettlements, totalSettled };
+  return {
+    totalUsers,
+    totalBrands,
+    totalInfluencers,
+    activeCampaigns,
+    pendingSettlements,
+    totalSettled,
+    openReports,
+    newUsersThisMonth,
+  };
 }
 
 // ─── User Management ──────────────────────────────────────────────────────────
@@ -88,17 +110,30 @@ export async function getUserDetail(userId: string) {
   if (!user) throw new NotFoundError('User');
 
   let profile: unknown = null;
+  let socialProfiles: unknown[] = [];
   if (user.role === 'influencer') {
     const [inf] = await db.select().from(influencerProfiles)
       .where(eq(influencerProfiles.userId, userId)).limit(1);
     profile = inf ?? null;
+
+    socialProfiles = await db
+      .select({
+        platform: socialConnections.platform,
+        platformHandle: socialConnections.platformHandle,
+        followerCount: socialConnections.followerCount,
+        engagementRate: socialConnections.engagementRate,
+        isConnected: socialConnections.isConnected,
+        updatedAt: socialConnections.updatedAt,
+      })
+      .from(socialConnections)
+      .where(eq(socialConnections.userId, userId));
   } else if (user.role === 'brand_owner') {
     const [brand] = await db.select().from(brandProfiles)
       .where(eq(brandProfiles.userId, userId)).limit(1);
     profile = brand ?? null;
   }
 
-  return { user, profile };
+  return { user, profile, socialProfiles };
 }
 
 export async function updateUserStatus(userId: string, dto: UpdateUserStatusDTO) {
@@ -185,6 +220,11 @@ export async function getAdminCampaignDetail(campaignId: string) {
 
   if (!row) throw new NotFoundError('Campaign');
 
+  const campaign = {
+    ...row,
+    description: row.brief,
+  };
+
   const influencerRows = await db
     .select({
       ciId: campaignInfluencers.id,
@@ -210,7 +250,7 @@ export async function getAdminCampaignDetail(campaignId: string) {
     .where(eq(campaignInfluencers.campaignId, campaignId))
     .orderBy(sql`${campaignInfluencers.createdAt} DESC`);
 
-  return { campaign: row, influencers: influencerRows };
+  return { campaign, influencers: influencerRows };
 }
 
 // ─── Reports Management ───────────────────────────────────────────────────────

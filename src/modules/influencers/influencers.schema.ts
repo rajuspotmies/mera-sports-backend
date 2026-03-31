@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 export const updateInfluencerProfileSchema = z.object({
+  email: z.string().email().optional(),
   handle: z.string().max(100).optional(),
   bio: z.string().max(2000).optional(),
   about: z.string().max(5000).optional(),

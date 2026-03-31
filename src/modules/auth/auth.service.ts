@@ -454,6 +454,14 @@ export async function sendOtp(dto: SendOtpDTO) {
     return { success: true, message: 'OTP sent successfully' };
   }
 
+  // For login, verify the account exists before sending OTP
+  if (dto.flow === 'login') {
+    const [existingUser] = await db.select({ id: users.id }).from(users).where(eq(users.phoneNumber, phoneNumber)).limit(1);
+    if (!existingUser) {
+      throw new NotFoundError('No account found with this phone number. Please register first.');
+    }
+  }
+
   const code = Math.floor(100000 + Math.random() * 900000).toString();
   const expiresAt = new Date();
   expiresAt.setMinutes(expiresAt.getMinutes() + 10);
@@ -508,9 +516,8 @@ export async function verifyOtp(dto: VerifyOtpDTO) {
   let influencerId: string | undefined;
 
   if (!user) {
-    // New user registration (assumed to be influencer for now as per user request context)
     if (!dto.name) {
-      throw new BadRequestError('Name is required for new registration');
+      throw new NotFoundError('No account found with this phone number. Please register first.');
     }
 
     [user] = await db.insert(users).values({
@@ -518,7 +525,7 @@ export async function verifyOtp(dto: VerifyOtpDTO) {
       name: dto.name,
       role: 'influencer',
       isVerified: true,
-      email: dto.email ?? `${dto.phoneNumber}@temp.mutiny.com`,
+      email: dto.email,
       passwordHash: '', // No password for OTP users
     }).returning();
 

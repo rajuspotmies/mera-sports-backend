@@ -75,12 +75,22 @@ export async function updateOwnInfluencerProfile(
 
   if (!profile) throw new NotFoundError('Influencer profile');
 
+  const { email, ...profileData } = dto;
+
+  // Update email in users table if provided
+  if (email) {
+    await db
+      .update(users)
+      .set({ email, updatedAt: new Date() })
+      .where(eq(users.id, userId));
+  }
+
   const [updated] = await db
     .update(influencerProfiles)
     .set({
-      ...dto,
+      ...profileData,
       engagementRate: dto.engagementRate !== undefined ? String(dto.engagementRate) : undefined,
-      updatedAt: new Date()
+      updatedAt: new Date(),
     })
     .where(eq(influencerProfiles.id, profile.id))
     .returning();

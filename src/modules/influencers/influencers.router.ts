@@ -3,7 +3,7 @@ import { authenticate } from '@/middleware/authenticate';
 import { authorize } from '@/middleware/authorize';
 import { validate } from '@/middleware/validate';
 import { upload, setUploadFolder } from '@/middleware/upload';
-import { uploadLimiter, authLimiter } from '@/middleware/rateLimiter';
+import { uploadLimiter, authLimiter, otpLimiter } from '@/middleware/rateLimiter';
 import { asyncHandler } from '@/shared/utils/asyncHandler';
 import {
   updateInfluencerProfileSchema,
@@ -23,7 +23,7 @@ const router = Router();
 // ─── Auth Routes (Role: influencer) ──────────────────────────────────────────
 // Note: Influencers use OTP-based authentication (phone number)
 
-router.post('/auth/send-otp', authLimiter, validate({ body: sendOtpSchema }), asyncHandler(authCtrl.sendOtpHandler));
+router.post('/auth/send-otp', otpLimiter, validate({ body: sendOtpSchema }), asyncHandler(authCtrl.sendOtpHandler));
 router.post('/auth/verify-otp', authLimiter, validate({ body: verifyOtpSchema }), asyncHandler(authCtrl.verifyOtpHandler('influencer')));
 router.post('/auth/refresh', asyncHandler(authCtrl.refreshHandler('influencer')));
 router.post('/auth/logout', asyncHandler(authCtrl.logoutHandler('influencer')));

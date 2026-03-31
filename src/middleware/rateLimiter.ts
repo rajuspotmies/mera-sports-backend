@@ -12,6 +12,18 @@ export const authLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+// OTP send — very strict to prevent billing abuse
+export const otpLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 3,
+  message: {
+    success: false,
+    error: { code: 'RATE_LIMIT_EXCEEDED', message: 'Too many OTP requests, please try again later' },
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 // General API
 export const apiLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute

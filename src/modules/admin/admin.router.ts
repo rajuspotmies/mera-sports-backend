@@ -7,12 +7,8 @@ import { Router } from 'express';
 import * as authCtrl from '../auth/auth.controller';
 import { loginSchema, updateMeSchema } from '../auth/auth.schema';
 import * as adminCtrl from './admin.controller';
-import {
-    listAdminCampaignsQuerySchema,
-    listReportsQuerySchema,
-    listUsersQuerySchema,
-    updateUserStatusSchema,
-} from './admin.schema';
+import { listAdminCampaignsQuerySchema, listReportsQuerySchema, listUsersQuerySchema, updateUserStatusSchema } from './admin.schema';
+import { updateCampaignSchema } from '../campaigns/campaigns.schema';
 import * as settlementsCtrl from './settlements.controller';
 import { listSettlementsQuerySchema, settleInfluencerSchema } from './settlements.schema';
 
@@ -91,6 +87,13 @@ router.get(
 );
 
 router.get('/campaigns/:id', authenticate('admin'), asyncHandler(adminCtrl.getAdminCampaignDetailHandler));
+
+router.patch(
+  '/campaigns/:id',
+  authenticate('admin'),
+  validate({ body: updateCampaignSchema }),
+  asyncHandler(adminCtrl.updateCampaignHandler)
+);
 
 // ─── Reports Management ───────────────────────────────────────────────────────
 

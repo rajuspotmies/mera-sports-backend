@@ -32,6 +32,7 @@ export const updateMeSchema = z.object({
 
 export const sendOtpSchema = z.object({
   phoneNumber: z.string().min(10).max(15),
+  flow: z.enum(['login', 'register']),
 });
 
 export const verifyOtpSchema = z.object({

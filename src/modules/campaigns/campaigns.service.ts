@@ -49,7 +49,7 @@ export async function listCampaignsForBrand(brandUser: JWTPayload, query: ListCa
 
 // ─── Influencer: discover public active campaigns ─────────────────────────────
 
-export async function discoverCampaigns(query: ListCampaignsQuery) {
+export async function discoverCampaigns(query: ListCampaignsQuery, requester?: JWTPayload) {
   const { page, limit } = parsePagination(query);
   const offset = getOffset({ page, limit });
 
@@ -61,20 +61,55 @@ export async function discoverCampaigns(query: ListCampaignsQuery) {
 
   const where = and(...conditions);
 
+  let influencerTier: string | null = null;
+  if (requester?.role === 'influencer' && requester.influencerId) {
+    const [inf] = await db
+      .select({ tier: influencerProfiles.tier })
+      .from(influencerProfiles)
+      .where(eq(influencerProfiles.id, requester.influencerId))
+      .limit(1);
+    influencerTier = inf?.tier ?? null;
+  }
+
   const rows = await db
     .select({
       id: campaigns.id,
       name: campaigns.name,
       type: campaigns.type,
       objective: campaigns.objective,
+      status: campaigns.status,
       budgetMode: campaigns.budgetMode,
+      budgetTierPricing: campaigns.budgetTierPricing,
+      platformFeePercent: campaigns.platformFeePercent,
+      mixMode: campaigns.mixMode,
+      selectedTier: campaigns.selectedTier,
+      productDetails: campaigns.productDetails,
+      location: campaigns.location,
       niches: campaigns.niches,
       creatorSizes: campaigns.creatorSizes,
-      brief: campaigns.brief,
-      deliverables: campaigns.deliverables,
-      deadline: campaigns.deadline,
-      thumbnailUrl: campaigns.thumbnailUrl,
       applicationsCount: campaigns.applicationsCount,
+      brief: campaigns.brief,
+      dos: campaigns.dos,
+      donts: campaigns.donts,
+      hashtags: campaigns.hashtags,
+      referenceUrls: campaigns.referenceUrls,
+      deliverables: campaigns.deliverables,
+      proofOfWorkReq: campaigns.proofOfWorkReq,
+      platform: campaigns.platform,
+      mainContentType: campaigns.mainContentType,
+      contentTypes: campaigns.contentTypes,
+      postingType: campaigns.postingType,
+      usageRights: campaigns.usageRights,
+      scriptType: campaigns.scriptType,
+      scriptFlow: campaigns.scriptFlow,
+      scriptFileKey: campaigns.scriptFileKey,
+      thumbnailUrl: campaigns.thumbnailUrl,
+      deadline: campaigns.deadline,
+      applicationDeadline: campaigns.applicationDeadline,
+      workDeadline: campaigns.workDeadline,
+      scriptDeadline: campaigns.scriptDeadline,
+      launchedAt: campaigns.launchedAt,
+      createdAt: campaigns.createdAt,
       brandName: brandProfiles.brandName,
       brandLogoUrl: brandProfiles.brandLogoUrl,
     })
@@ -85,33 +120,48 @@ export async function discoverCampaigns(query: ListCampaignsQuery) {
     .limit(limit)
     .offset(offset);
 
+  const formattedRows = rows.map((r) => formatCampaignForInfluencer(r, influencerTier));
+
   const [{ count }] = await db
     .select({ count: sql<number>`count(*)::int` })
     .from(campaigns)
     .where(where);
 
-  return { campaigns: rows, meta: buildPaginationMeta(count, { page, limit }) };
+  return { campaigns: formattedRows, meta: buildPaginationMeta(count, { page, limit }) };
 }
 
 // ─── Get single campaign ──────────────────────────────────────────────────────
 
 export async function getCampaignById(id: string, requester: JWTPayload) {
-  const [campaign] = await db.select().from(campaigns).where(eq(campaigns.id, id)).limit(1);
+  const [campaignWithBrand] = await db
+    .select({
+      campaign: campaigns,
+      brandName: brandProfiles.brandName,
+      brandLogoUrl: brandProfiles.brandLogoUrl,
+    })
+    .from(campaigns)
+    .innerJoin(brandProfiles, eq(brandProfiles.id, campaigns.brandId))
+    .where(eq(campaigns.id, id))
+    .limit(1);
 
-  if (!campaign) throw new NotFoundError('Campaign');
+  if (!campaignWithBrand) throw new NotFoundError('Campaign');
+
+  const { campaign, brandName, brandLogoUrl } = campaignWithBrand;
+  const campaignWithDetails = { ...campaign, brandName, brandLogoUrl };
 
   // Private campaigns: only brand owner, admin can view
   if (campaign.visibility === 'private') {
-    if (requester.role === 'admin') return campaign;
+    if (requester.role === 'admin') return campaignWithDetails;
 
     if (requester.role === 'brand_owner' && campaign.brandId === requester.brandId) {
-      return campaign;
+      return campaignWithDetails;
     }
 
     if (requester.role === 'influencer' && requester.influencerId) {
-      const [ci] = await db
-        .select({ id: campaignInfluencers.id })
+      const [ciData] = await db
+        .select({ id: campaignInfluencers.id, tier: influencerProfiles.tier })
         .from(campaignInfluencers)
+        .innerJoin(influencerProfiles, eq(influencerProfiles.id, campaignInfluencers.influencerId))
         .where(
           and(
             eq(campaignInfluencers.campaignId, campaign.id),
@@ -120,22 +170,32 @@ export async function getCampaignById(id: string, requester: JWTPayload) {
         )
         .limit(1);
 
-      if (ci) return stripTierPricingForInfluencer(campaign);
+      if (ciData) return formatCampaignForInfluencer(campaignWithDetails, ciData.tier);
     }
 
     throw new ForbiddenError('This campaign is private');
   }
 
-  if (requester.role === 'influencer') {
-    return stripTierPricingForInfluencer(campaign);
+  if (requester.role === 'influencer' && requester.influencerId) {
+    const [inf] = await db
+      .select({ tier: influencerProfiles.tier })
+      .from(influencerProfiles)
+      .where(eq(influencerProfiles.id, requester.influencerId))
+      .limit(1);
+    return formatCampaignForInfluencer(campaignWithDetails, inf?.tier ?? null);
   }
 
-  return campaign;
+  return campaignWithDetails;
 }
 
-function stripTierPricingForInfluencer(campaign: Campaign) {
+function formatCampaignForInfluencer(campaign: any, tier: string | null) {
   const { budgetTierPricing, budgetTotal, ...safe } = campaign;
-  return safe;
+  let tierPrice = null;
+  if (tier && Array.isArray(budgetTierPricing)) {
+    const entry = budgetTierPricing.find((p: any) => p.tier === tier);
+    tierPrice = entry ? entry.rate : null;
+  }
+  return { ...safe, tierPrice };
 }
 
 // ─── Create ───────────────────────────────────────────────────────────────────

@@ -10,7 +10,7 @@ const router = Router({ mergeParams: true });
 
 router.use(authenticate());
 
-// Initiate a payment round for all accepted (unpaid) influencers
+// Initiate a payment round for accepted / work_review influencers
 router.post(
   '/',
   authorize('brand_owner', 'admin'),
@@ -18,12 +18,20 @@ router.post(
   asyncHandler(ctrl.initiatePaymentRoundHandler)
 );
 
-// Verify a successful Razorpay payment (Signature check)
+// Verify successful Cashfree payment (client-side callback)
 router.post(
   '/verify',
   authorize('brand_owner', 'admin'),
   validate({ body: verifyPaymentSchema }),
   asyncHandler(ctrl.verifyPaymentHandler)
+);
+
+// Cancel a pending payment round (user closed the modal mid-payment)
+// paymentId is read from URL params — no body validation needed
+router.patch(
+  '/:paymentId/cancel',
+  authorize('brand_owner', 'admin'),
+  asyncHandler(ctrl.cancelPaymentHandler)
 );
 
 // Payment summary: rounds, amounts, eligible counts
@@ -33,7 +41,14 @@ router.get(
   asyncHandler(ctrl.getPaymentSummaryHandler)
 );
 
-// Payment round details (which influencers, amounts)
+// Reconcile stuck influencers — fixes payment_pending CIs after a captured payment
+router.post(
+  '/reconcile',
+  authorize('brand_owner', 'admin'),
+  asyncHandler(ctrl.reconcilePaymentHandler)
+);
+
+// Payment round details
 router.get(
   '/:paymentId',
   authorize('brand_owner', 'admin'),

@@ -76,6 +76,14 @@ router.post(
   asyncHandler(ctrl.markProductShippedHandler)
 );
 
+// Brand: force mark product as delivered (resolves product_pending)
+router.post(
+  '/:appId/product-delivered',
+  authenticate(),
+  authorize('brand_owner', 'admin'),
+  asyncHandler(ctrl.forceProductDeliveredHandler)
+);
+
 // Influencer: confirm product received
 router.post(
   '/product-received',

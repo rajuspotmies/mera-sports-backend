@@ -34,6 +34,7 @@ export const ciStatusEnum = pgEnum('ci_status', [
   'accepted',         // Both parties agreed on rate — conversation enabled
   'payment_pending',  // Awaiting brand payment for this round
   'paid',             // Brand has paid the platform (advance received)
+  'product_pending',  // Awaiting physical product delivery (only when budgetMode uses products)
   'script_pending',   // Awaiting script submission
   'script_review',    // Script submitted, awaiting brand review
   'work_pending',     // Script approved, awaiting content submission

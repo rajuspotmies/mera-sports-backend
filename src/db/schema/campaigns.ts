@@ -1,21 +1,21 @@
 import {
-  pgTable,
-  uuid,
-  varchar,
-  text,
-  boolean,
-  timestamp,
-  integer,
-  jsonb,
-  numeric,
+    boolean,
+    integer,
+    jsonb,
+    numeric,
+    pgTable,
+    text,
+    timestamp,
+    uuid,
+    varchar,
 } from 'drizzle-orm/pg-core';
-import {
-  campaignTypeEnum,
-  campaignVisibilityEnum,
-  campaignStatusEnum,
-  budgetModeEnum,
-} from './enums';
 import { brandProfiles } from './brand_profiles';
+import {
+    budgetModeEnum,
+    campaignStatusEnum,
+    campaignTypeEnum,
+    campaignVisibilityEnum,
+} from './enums';
 
 export const campaigns = pgTable('campaigns', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -71,6 +71,7 @@ export const campaigns = pgTable('campaigns', {
 
   // More detailed deliverables/config
   platform: varchar('platform', { length: 50 }), // instagram | youtube | twitter
+  mainContentType: varchar('main_content_type', { length: 100 }),
   contentTypes: text('content_types').array().default([]).notNull(),
   postingType: varchar('posting_type', { length: 50 }), // creator | brand
   usageRights: varchar('usage_rights', { length: 50 }), // e.g. 30d, 90d

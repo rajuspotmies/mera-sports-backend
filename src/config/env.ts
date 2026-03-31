@@ -40,10 +40,15 @@ const envSchema = z.object({
   AZURE_OPENAI_DEPLOYMENT: z.string().optional(),
   AZURE_OPENAI_API_VERSION: z.string().default('2023-05-15'),
 
-  // Payments
-  RAZORPAY_KEY_ID: z.string().optional(),
-  RAZORPAY_KEY_SECRET: z.string().optional(),
-  RAZORPAY_WEBHOOK_SECRET: z.string().optional(),
+  // Payments — Cashfree
+  CASHFREE_APP_ID: z.string().optional(),
+  CASHFREE_SECRET_KEY: z.string().optional(),
+  CASHFREE_ENV: z.enum(['sandbox', 'production']).default('sandbox'),
+  CASHFREE_WEBHOOK_SECRET: z.string().optional(),
+  CASHFREE_DEFAULT_PHONE: z.string().optional(), // Optional override for Cashfree order customer_phone
+
+  // Backend public URL (used for Cashfree notify_url webhook)
+  BACKEND_URL: z.string().optional(),
 
   // Email (Resend API preferred; SMTP as fallback)
   SMTP_API_KEY: z.string().optional(),

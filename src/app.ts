@@ -20,7 +20,7 @@ import uploadsRouter from './modules/uploads/uploads.router';
 import reportsRouter from './modules/reports/reports.router';
 import socialRouter from './modules/social/social.router';
 import { asyncHandler } from './shared/utils/asyncHandler';
-import { razorpayWebhookHandler } from './modules/payments/payments.controller';
+import { cashfreeWebhookHandler } from './modules/payments/payments.controller';
 
 function resolveTrustProxySetting(): boolean | number {
   // Explicit env has highest priority so deployments can tune multi-proxy setups.
@@ -84,8 +84,8 @@ export function createApp() {
   });
 
   // ─── Payment webhooks (no auth) ───────────────────────────────────────────
-  // Global webhook endpoint for Razorpay callbacks.
-  app.post('/api/v1/payments/webhook', asyncHandler(razorpayWebhookHandler));
+  // Global webhook endpoint for Cashfree callbacks.
+  app.post('/api/v1/payments/webhook/cashfree', asyncHandler(cashfreeWebhookHandler));
 
   // ─── API routes ───────────────────────────────────────────────────────────
   app.use('/api/v1', apiLimiter);

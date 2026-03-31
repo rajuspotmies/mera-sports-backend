@@ -77,22 +77,39 @@ export async function discoverCampaigns(query: ListCampaignsQuery, requester?: J
       name: campaigns.name,
       type: campaigns.type,
       objective: campaigns.objective,
+      status: campaigns.status,
       budgetMode: campaigns.budgetMode,
       budgetTierPricing: campaigns.budgetTierPricing,
       platformFeePercent: campaigns.platformFeePercent,
+      mixMode: campaigns.mixMode,
+      selectedTier: campaigns.selectedTier,
+      productDetails: campaigns.productDetails,
+      location: campaigns.location,
       niches: campaigns.niches,
       creatorSizes: campaigns.creatorSizes,
+      applicationsCount: campaigns.applicationsCount,
       brief: campaigns.brief,
       dos: campaigns.dos,
       donts: campaigns.donts,
       hashtags: campaigns.hashtags,
       referenceUrls: campaigns.referenceUrls,
-      platform: campaigns.platform,
-      contentTypes: campaigns.contentTypes,
       deliverables: campaigns.deliverables,
-      deadline: campaigns.deadline,
+      proofOfWorkReq: campaigns.proofOfWorkReq,
+      platform: campaigns.platform,
+      mainContentType: campaigns.mainContentType,
+      contentTypes: campaigns.contentTypes,
+      postingType: campaigns.postingType,
+      usageRights: campaigns.usageRights,
+      scriptType: campaigns.scriptType,
+      scriptFlow: campaigns.scriptFlow,
+      scriptFileKey: campaigns.scriptFileKey,
       thumbnailUrl: campaigns.thumbnailUrl,
-      applicationsCount: campaigns.applicationsCount,
+      deadline: campaigns.deadline,
+      applicationDeadline: campaigns.applicationDeadline,
+      workDeadline: campaigns.workDeadline,
+      scriptDeadline: campaigns.scriptDeadline,
+      launchedAt: campaigns.launchedAt,
+      createdAt: campaigns.createdAt,
       brandName: brandProfiles.brandName,
       brandLogoUrl: brandProfiles.brandLogoUrl,
     })
@@ -116,16 +133,28 @@ export async function discoverCampaigns(query: ListCampaignsQuery, requester?: J
 // ─── Get single campaign ──────────────────────────────────────────────────────
 
 export async function getCampaignById(id: string, requester: JWTPayload) {
-  const [campaign] = await db.select().from(campaigns).where(eq(campaigns.id, id)).limit(1);
+  const [campaignWithBrand] = await db
+    .select({
+      campaign: campaigns,
+      brandName: brandProfiles.brandName,
+      brandLogoUrl: brandProfiles.brandLogoUrl,
+    })
+    .from(campaigns)
+    .innerJoin(brandProfiles, eq(brandProfiles.id, campaigns.brandId))
+    .where(eq(campaigns.id, id))
+    .limit(1);
 
-  if (!campaign) throw new NotFoundError('Campaign');
+  if (!campaignWithBrand) throw new NotFoundError('Campaign');
+
+  const { campaign, brandName, brandLogoUrl } = campaignWithBrand;
+  const campaignWithDetails = { ...campaign, brandName, brandLogoUrl };
 
   // Private campaigns: only brand owner, admin can view
   if (campaign.visibility === 'private') {
-    if (requester.role === 'admin') return campaign;
+    if (requester.role === 'admin') return campaignWithDetails;
 
     if (requester.role === 'brand_owner' && campaign.brandId === requester.brandId) {
-      return campaign;
+      return campaignWithDetails;
     }
 
     if (requester.role === 'influencer' && requester.influencerId) {
@@ -141,7 +170,7 @@ export async function getCampaignById(id: string, requester: JWTPayload) {
         )
         .limit(1);
 
-      if (ciData) return formatCampaignForInfluencer(campaign, ciData.tier);
+      if (ciData) return formatCampaignForInfluencer(campaignWithDetails, ciData.tier);
     }
 
     throw new ForbiddenError('This campaign is private');
@@ -153,10 +182,10 @@ export async function getCampaignById(id: string, requester: JWTPayload) {
       .from(influencerProfiles)
       .where(eq(influencerProfiles.id, requester.influencerId))
       .limit(1);
-    return formatCampaignForInfluencer(campaign, inf?.tier ?? null);
+    return formatCampaignForInfluencer(campaignWithDetails, inf?.tier ?? null);
   }
 
-  return campaign;
+  return campaignWithDetails;
 }
 
 function formatCampaignForInfluencer(campaign: any, tier: string | null) {

@@ -3,50 +3,56 @@ import { env } from '@/config/env';
 import { AppError } from '@/shared/errors';
 import * as paymentsService from './payments.service';
 
-export async function handleWebhook(payload: any, signature: string, rawBody?: Buffer) {
-  if (!env.RAZORPAY_WEBHOOK_SECRET) {
-    throw new AppError('CONFIG_ERROR', 'Razorpay webhook secret not configured');
+export async function handleWebhook(payload: any, signature: string, timestamp: string, rawBody?: string) {
+  if (!env.CASHFREE_WEBHOOK_SECRET) {
+    throw new AppError('CONFIG_ERROR', 'Cashfree webhook secret not configured');
   }
 
-  const hmac = crypto.createHmac('sha256', env.RAZORPAY_WEBHOOK_SECRET);
-  const verificationData = rawBody ? rawBody : JSON.stringify(payload);
-  hmac.update(verificationData);
+  // Cashfree webhook verification: HMAC-SHA256(timestamp + rawBody, secret) → base64
+  const message = timestamp + (rawBody ?? JSON.stringify(payload));
+  const expectedSignature = crypto
+    .createHmac('sha256', env.CASHFREE_WEBHOOK_SECRET)
+    .update(message)
+    .digest('base64');
 
-  const expectedSignature = hmac.digest('hex');
-  const signatureBuffer = Buffer.from(signature);
-  const expectedBuffer = Buffer.from(expectedSignature);
-
-  if (signatureBuffer.length !== expectedBuffer.length || !crypto.timingSafeEqual(signatureBuffer, expectedBuffer)) {
+  if (signature !== expectedSignature) {
     throw new AppError('INVALID_SIGNATURE', 'Webhook signature mismatch');
   }
 
-  if (payload.event === 'payment.captured' || payload.event === 'order.paid') {
-    const entity = payload.payload?.payment?.entity || payload.payload?.order?.entity;
-    if (entity && entity.notes) {
-      const { campaignId, round, paymentType } = entity.notes;
-      if (campaignId && round && paymentType) {
-        await paymentsService.handleCampaignPaymentSuccess(
-          campaignId,
-          Number(round),
-          paymentType,
-          entity.id
-        );
-      }
-    }
-  }
+  const eventType: string = payload?.type ?? payload?.event ?? '';
 
-  if (payload.event === 'payment.failed') {
-    // entity.order_id links back to the Razorpay order we created
-    const entity = payload.payload?.payment?.entity;
-    const orderId = entity?.order_id;
+  // Cashfree sends: PAYMENT_SUCCESS_WEBHOOK, PAYMENT_FAILED_WEBHOOK, ORDER_PAID
+  if (
+    eventType === 'PAYMENT_SUCCESS_WEBHOOK' ||
+    eventType === 'ORDER_PAID' ||
+    eventType === 'payment.captured'
+  ) {
+    const orderId =
+      payload?.data?.order?.order_id ??
+      payload?.data?.payment?.order_id ??
+      payload?.payload?.payment?.entity?.order_id;
+
+    const cfPaymentId =
+      payload?.data?.payment?.cf_payment_id?.toString() ??
+      payload?.data?.payment?.payment_id?.toString();
+
     if (orderId) {
-      await paymentsService.handleCampaignPaymentFailure(orderId);
+      await paymentsService.handleCampaignPaymentSuccess(orderId, cfPaymentId);
     }
   }
 
-  if (payload.event === 'order.expired') {
-    const entity = payload.payload?.order?.entity;
-    const orderId = entity?.id;
+  if (
+    eventType === 'PAYMENT_FAILED_WEBHOOK' ||
+    eventType === 'payment.failed' ||
+    eventType === 'ORDER_EXPIRED' ||
+    eventType === 'USER_DROPPED_WEBHOOK' ||
+    eventType === 'user.dropped'
+  ) {
+    const orderId =
+      payload?.data?.order?.order_id ??
+      payload?.data?.payment?.order_id ??
+      payload?.payload?.payment?.entity?.order_id;
+
     if (orderId) {
       await paymentsService.handleCampaignPaymentFailure(orderId);
     }

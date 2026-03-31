@@ -14,16 +14,21 @@ export async function initiatePaymentRoundHandler(req: Request, res: Response) {
 
 export async function verifyPaymentHandler(req: Request, res: Response) {
   const { campaignId } = req.params;
-  const { razorpayOrderId, razorpayPaymentId, razorpaySignature } = req.body;
+  const { orderId, paymentId } = req.body;
 
   const result = await paymentsService.verifyCampaignPayment(
     campaignId,
     req.user,
-    razorpayOrderId,
-    razorpayPaymentId,
-    razorpaySignature
+    orderId,
+    paymentId
   );
   sendSuccess(res, result, 201);
+}
+
+export async function cancelPaymentHandler(req: Request, res: Response) {
+  const { paymentId } = req.params;
+  const result = await paymentsService.cancelPaymentRound(paymentId, req.user);
+  sendSuccess(res, result);
 }
 
 export async function getPaymentSummaryHandler(req: Request, res: Response) {
@@ -38,13 +43,21 @@ export async function getPaymentRoundHandler(req: Request, res: Response) {
   sendSuccess(res, result);
 }
 
-export async function razorpayWebhookHandler(req: Request, res: Response) {
-  const signature = req.headers['x-razorpay-signature'] as string;
+export async function cashfreeWebhookHandler(req: Request, res: Response) {
+  const signature = req.headers['x-webhook-signature'] as string;
+  const timestamp = req.headers['x-webhook-timestamp'] as string;
 
-  if (!signature) {
-    throw new AppError('MISSING_SIGNATURE', 'Razorpay signature is missing', 400);
+  if (!signature || !timestamp) {
+    throw new AppError('MISSING_SIGNATURE', 'Cashfree signature or timestamp is missing', 400);
   }
 
-  await handleWebhook(req.body, signature, req.rawBody);
+  const rawBody = req.rawBody ? req.rawBody.toString() : JSON.stringify(req.body);
+  await handleWebhook(req.body, signature, timestamp, rawBody);
   res.json({ status: 'ok' });
+}
+
+export async function reconcilePaymentHandler(req: Request, res: Response) {
+  const { campaignId } = req.params;
+  const result = await paymentsService.reconcileStuckInfluencers(campaignId, req.user);
+  sendSuccess(res, result);
 }

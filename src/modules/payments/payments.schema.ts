@@ -6,9 +6,12 @@ export const initiatePaymentRoundSchema = z.object({
 });
 
 export const verifyPaymentSchema = z.object({
-  razorpayOrderId: z.string().min(1),
-  razorpayPaymentId: z.string().min(1),
-  razorpaySignature: z.string().min(1),
+  orderId: z.string().min(1),
+  paymentId: z.string().min(1),
+});
+
+export const cancelPaymentSchema = z.object({
+  paymentId: z.string().uuid(),
 });
 
 export const webhookSchema = z.object({

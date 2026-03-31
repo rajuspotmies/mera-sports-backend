@@ -1,13 +1,13 @@
-import { eq, and, desc, asc, sql, notInArray } from 'drizzle-orm';
 import { db } from '@/db';
-import { campaigns, brandProfiles, users, campaignInfluencers, influencerProfiles } from '@/db/schema';
-import { createNotification } from '../notifications/notifications.service';
-import { NotFoundError, ForbiddenError, BadRequestError } from '@/shared/errors';
-import { parsePagination, buildPaginationMeta, getOffset } from '@/shared/utils/pagination';
-import type { JWTPayload } from '@/shared/types/api';
-import { emitToCampaign, emitToUser } from '@/socket';
 import type { Campaign } from '@/db/schema';
-import type { CreateCampaignDTO, UpdateCampaignDTO, ListCampaignsQuery } from './campaigns.schema';
+import { brandProfiles, campaignInfluencers, campaigns, influencerProfiles } from '@/db/schema';
+import { BadRequestError, ForbiddenError, NotFoundError } from '@/shared/errors';
+import type { JWTPayload } from '@/shared/types/api';
+import { buildPaginationMeta, getOffset, parsePagination } from '@/shared/utils/pagination';
+import { emitToCampaign } from '@/socket';
+import { and, asc, desc, eq, sql } from 'drizzle-orm';
+import { createNotification } from '../notifications/notifications.service';
+import type { CreateCampaignDTO, ListCampaignsQuery, UpdateCampaignDTO } from './campaigns.schema';
 
 // ─── Brand: list their own campaigns ─────────────────────────────────────────
 
@@ -189,6 +189,7 @@ export async function createCampaign(brandUser: JWTPayload, dto: CreateCampaignD
 
   const thumbnailUrl = basics?.coverImageUrl ?? (dto as any).thumbnailUrl;
   const platform = deliverables?.platform;
+  const mainContentType = deliverables?.mainContentType;
   const contentTypes = deliverables?.contentTypes ?? [];
   const postingType = deliverables?.postingType;
   const usageRights = deliverables?.usageRights;
@@ -228,6 +229,7 @@ export async function createCampaign(brandUser: JWTPayload, dto: CreateCampaignD
       scriptDeadline,
       thumbnailUrl,
       platform,
+      mainContentType,
       contentTypes,
       postingType,
       usageRights,
@@ -286,6 +288,7 @@ export async function updateCampaign(
   }
   if (deliverables?.proofOfWorkRequired !== undefined) mappedUpdate.proofOfWorkReq = deliverables.proofOfWorkRequired;
   if (deliverables?.platform !== undefined) mappedUpdate.platform = deliverables.platform;
+  if (deliverables?.mainContentType !== undefined) mappedUpdate.mainContentType = deliverables.mainContentType;
   if (deliverables?.contentTypes !== undefined) mappedUpdate.contentTypes = deliverables.contentTypes;
   if (deliverables?.postingType !== undefined) mappedUpdate.postingType = deliverables.postingType;
   if (deliverables?.usageRights !== undefined) mappedUpdate.usageRights = deliverables.usageRights;

@@ -3,14 +3,14 @@ import { authenticate } from '@/middleware/authenticate';
 import { authorize } from '@/middleware/authorize';
 import { validate } from '@/middleware/validate';
 import { asyncHandler } from '@/shared/utils/asyncHandler';
-import { initiatePaymentRoundSchema, verifyPaymentSchema } from './payments.schema';
+import { initiatePaymentRoundSchema, verifyPaymentSchema, cancelPaymentSchema } from './payments.schema';
 import * as ctrl from './payments.controller';
 
 const router = Router({ mergeParams: true });
 
 router.use(authenticate());
 
-// Initiate a payment round for all accepted (unpaid) influencers
+// Initiate a payment round for accepted / work_review influencers
 router.post(
   '/',
   authorize('brand_owner', 'admin'),
@@ -18,12 +18,20 @@ router.post(
   asyncHandler(ctrl.initiatePaymentRoundHandler)
 );
 
-// Verify a successful Razorpay payment (Signature check)
+// Verify successful Cashfree payment (client-side callback)
 router.post(
   '/verify',
   authorize('brand_owner', 'admin'),
   validate({ body: verifyPaymentSchema }),
   asyncHandler(ctrl.verifyPaymentHandler)
+);
+
+// Cancel a pending payment round (user closed the modal mid-payment)
+router.patch(
+  '/:paymentId/cancel',
+  authorize('brand_owner', 'admin'),
+  validate({ body: cancelPaymentSchema }),
+  asyncHandler(ctrl.cancelPaymentHandler)
 );
 
 // Payment summary: rounds, amounts, eligible counts
@@ -33,7 +41,7 @@ router.get(
   asyncHandler(ctrl.getPaymentSummaryHandler)
 );
 
-// Payment round details (which influencers, amounts)
+// Payment round details
 router.get(
   '/:paymentId',
   authorize('brand_owner', 'admin'),

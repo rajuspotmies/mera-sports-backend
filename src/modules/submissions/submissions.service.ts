@@ -2,6 +2,7 @@ import { eq, and } from 'drizzle-orm';
 import { db } from '@/db';
 import { workSubmissions, campaignInfluencers, campaigns, brandProfiles, influencerProfiles, users } from '@/db/schema';
 import { createNotification } from '../notifications/notifications.service';
+import { sendInfluencerInvoiceOnCompletion } from '../invoice/invoice.service';
 import { NotFoundError, ForbiddenError, BadRequestError } from '@/shared/errors';
 import type { JWTPayload } from '@/shared/types/api';
 
@@ -146,6 +147,8 @@ export async function approveSubmission(subId: string, brandUser: JWTPayload) {
       .update(campaignInfluencers)
       .set({ status: 'completed', completedAt: new Date(), updatedAt: new Date() })
       .where(eq(campaignInfluencers.id, ci.id));
+    // Product campaigns have no final payment — send influencer invoice now
+    sendInfluencerInvoiceOnCompletion(ci.id).catch(() => {});
   }
 
   let notifMessage: string;

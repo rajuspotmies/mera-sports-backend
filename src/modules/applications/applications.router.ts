@@ -76,7 +76,7 @@ router.post(
   asyncHandler(ctrl.markProductShippedHandler)
 );
 
-// Brand: force mark product as delivered (resolves product_pending)
+// Brand: force mark product as delivered (records delivery timestamp)
 router.post(
   '/:appId/product-delivered',
   authenticate(),

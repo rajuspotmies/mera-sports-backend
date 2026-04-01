@@ -600,18 +600,15 @@ export async function confirmProductReceived(
     .limit(1);
 
   if (!ciData) throw new NotFoundError('Application');
-  const { ci, campaignName, budgetMode, brandUserId, scriptType = 'creator' } = ciData;
+  const { ci, campaignName, budgetMode, brandUserId } = ciData;
 
   if (budgetMode !== 'product' && budgetMode !== 'paid_product') {
     throw new BadRequestError('This campaign does not involve a product');
   }
 
-  const nextStatus = scriptType === 'creator' ? 'script_pending' : 'work_pending';
-
   const [updated] = await db
     .update(campaignInfluencers)
     .set({ 
-      status: nextStatus as any, 
       productReceivedAt: new Date(), 
       updatedAt: new Date() 
     })
@@ -653,18 +650,15 @@ export async function forceProductDelivered(
     .limit(1);
 
   if (!ciData) throw new NotFoundError('Application');
-  const { ci, influencerUserId, campaignName, budgetMode, scriptType } = ciData;
+  const { ci, influencerUserId, campaignName, budgetMode } = ciData;
 
   if (budgetMode !== 'product' && budgetMode !== 'paid_product') {
     throw new BadRequestError('This campaign does not involve a product');
   }
 
-  const nextStatus = scriptType === 'creator' ? 'script_pending' : 'work_pending';
-
   const [updated] = await db
     .update(campaignInfluencers)
     .set({ 
-      status: nextStatus as any, 
       productReceivedAt: new Date(), 
       updatedAt: new Date() 
     })

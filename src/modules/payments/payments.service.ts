@@ -14,6 +14,7 @@ import { eq, and, inArray, sql } from 'drizzle-orm';
 import { AppError, BadRequestError, NotFoundError, ForbiddenError } from '@/shared/errors';
 import { createNotification } from '../notifications/notifications.service';
 import { emitToCampaign } from '@/socket';
+import { sendBrandInvoiceAfterPayment, sendInfluencerInvoiceOnCompletion } from '../invoice/invoice.service';
 import type { JWTPayload } from '@/shared/types/api';
 
 // ─── Cashfree SDK singleton ───────────────────────────────────────────────────
@@ -40,12 +41,7 @@ async function advanceCIsAfterPayment(ciIds: string[], campaignId: string, txDB:
     .where(eq(campaigns.id, campaignId))
     .limit(1);
 
-  let nextStatus = campaign?.scriptType === 'creator' ? 'script_pending' : 'work_pending';
-  
-  // If the campaign sends a product, intercept the flow and await product delivery
-  if (campaign?.budgetMode === 'product' || campaign?.budgetMode === 'paid_product') {
-    nextStatus = 'product_pending';
-  }
+  const nextStatus = campaign?.scriptType === 'creator' ? 'script_pending' : 'work_pending';
 
   await txDB
     .update(campaignInfluencers)
@@ -364,8 +360,6 @@ export async function verifyCampaignPayment(
         .set({ status: 'paid', paidAt: new Date(), updatedAt: new Date() })
         .where(inArray(campaignInfluencers.id, selectedCiIds));
 
-      // Use the centralized advance function which correctly handles:
-      // - product/paid_product → product_pending
       // - brand-script campaigns → work_pending
       // - creator-script campaigns → script_pending
       await advanceCIsAfterPayment(selectedCiIds, campaignId, tx);
@@ -426,12 +420,17 @@ export async function verifyCampaignPayment(
     .from(campaignPaymentItems)
     .where(eq(campaignPaymentItems.campaignPaymentId, payment.id));
 
+  const ciIds = items.map((i) => i.campaignInfluencerId);
   await sendPaymentNotifications(
     campaignId,
-    items.map((i) => i.campaignInfluencerId),
+    ciIds,
     payment.paymentType as 'advance' | 'final'
   );
   emitToCampaign(campaignId, 'CAMPAIGN_UPDATED', { id: campaignId });
+  sendBrandInvoiceAfterPayment(campaignId, ciIds, payment).catch(() => {});
+  if (payment.paymentType === 'final') {
+    ciIds.forEach((id) => sendInfluencerInvoiceOnCompletion(id).catch(() => {}));
+  }
 
   return { message: 'Payment verified and captured successfully', paymentId: payment.id, status: 'captured' };
 }
@@ -558,6 +557,10 @@ export async function handleCampaignPaymentSuccess(
         .where(inArray(campaignInfluencers.id, stuckIds));
     }
     emitToCampaign(capturedPayment.campaignId, 'CAMPAIGN_UPDATED', { id: capturedPayment.campaignId });
+    sendBrandInvoiceAfterPayment(capturedPayment.campaignId, stuckIds, capturedPayment).catch(() => {});
+    if (capturedPayment.paymentType === 'final') {
+      stuckIds.forEach((id) => sendInfluencerInvoiceOnCompletion(id).catch(() => {}));
+    }
     return;
   }
 
@@ -601,6 +604,10 @@ export async function handleCampaignPaymentSuccess(
 
   await sendPaymentNotifications(payment.campaignId, ciIds, payment.paymentType as 'advance' | 'final');
   emitToCampaign(payment.campaignId, 'CAMPAIGN_UPDATED', { id: payment.campaignId });
+  sendBrandInvoiceAfterPayment(payment.campaignId, ciIds, payment).catch(() => {});
+  if (payment.paymentType === 'final') {
+    ciIds.forEach((id) => sendInfluencerInvoiceOnCompletion(id).catch(() => {}));
+  }
 }
 
 // ─── Webhook: Cashfree payment failed / expired ───────────────────────────────

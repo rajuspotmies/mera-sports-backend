@@ -35,6 +35,8 @@ export const searchInfluencersSchema = z.object({
   minEngagement: z.coerce.number().optional(),
   page: z.coerce.number().default(1),
   limit: z.coerce.number().default(20),
+  brandId: z.string().uuid().optional(),
+  savedOnly: z.coerce.boolean().optional(),
 });
 
 export const inviteInfluencersSchema = z.object({

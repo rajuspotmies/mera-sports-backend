@@ -32,7 +32,7 @@ export const errorHandler: ErrorRequestHandler = (
   }
 
   // ── Handled: ZodError (validation) ─────────────────────────────────────────
-  if (err instanceof ZodError) {
+  if (err instanceof ZodError || (err && typeof err === 'object' && 'name' in err && err.name === 'ZodError')) {
     logger.warn(`${req.method} ${req.path} — VALIDATION_ERROR: Invalid request data`);
 
     res.status(400).json({
@@ -40,7 +40,7 @@ export const errorHandler: ErrorRequestHandler = (
       error: {
         code: 'VALIDATION_ERROR',
         message: 'Invalid request data',
-        details: err.flatten().fieldErrors,
+        details: (err as ZodError).flatten ? (err as ZodError).flatten().fieldErrors : (err as any).issues,
       },
     });
     return;

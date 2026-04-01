@@ -26,3 +26,4 @@ export * from './reports';
 export * from './blocks';
 export * from './social_connections';
 export * from './bank_details';
+export * from './bookmarks';

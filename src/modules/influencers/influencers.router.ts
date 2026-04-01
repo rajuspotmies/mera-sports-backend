@@ -133,6 +133,12 @@ router.delete(
   asyncHandler(bankDetailsCtrl.deleteBankDetailsHandler)
 );
 
+router.post(
+  '/:id/bookmark',
+  authenticate('brand_owner'),
+  asyncHandler(ctrl.toggleBookmarkHandler)
+);
+
 router.get(
   '/:id',
   authenticate(),

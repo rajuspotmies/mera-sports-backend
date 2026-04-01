@@ -697,13 +697,13 @@ export async function getCampaignPaymentSummary(campaignId: string, requester: J
     paymentRounds,
     influencerStatusCounts: statusMap,
     nextAdvanceRound: {
-      eligibleCount: unpaidAccepted.count,
+      count: unpaidAccepted.count,
       influencerTotal: unpaidAccepted.totalBudget * 0.5,
       platformFee: (unpaidAccepted.totalBudget * 0.5 * feePercent) / 100,
       grandTotal: unpaidAccepted.totalBudget * 0.5 * (1 + feePercent / 100),
     },
     nextFinalRound: {
-      eligibleCount: unpaidFinal.count,
+      count: unpaidFinal.count,
       influencerTotal: unpaidFinal.totalBudget * 0.5,
       platformFee: (unpaidFinal.totalBudget * 0.5 * feePercent) / 100,
       grandTotal: unpaidFinal.totalBudget * 0.5 * (1 + feePercent / 100),

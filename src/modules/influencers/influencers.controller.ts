@@ -21,12 +21,14 @@ export async function uploadAvatarHandler(req: Request, res: Response): Promise<
 }
 
 export async function searchInfluencersHandler(req: Request, res: Response): Promise<void> {
-  const { influencers, meta } = await influencersService.searchInfluencers(req.query as never);
+  const brandId = req.user?.brandId;
+  const { influencers, meta } = await influencersService.searchInfluencers({ ...req.query, brandId } as any);
   sendSuccess(res, influencers, 200, meta);
 }
 
 export async function getInfluencerByIdHandler(req: Request, res: Response): Promise<void> {
-  const result = await influencersService.getInfluencerById(req.params.id);
+  const brandId = req.user?.brandId;
+  const result = await influencersService.getInfluencerById(req.params.id, brandId);
   sendSuccess(res, result);
 }
 
@@ -57,4 +59,11 @@ export async function updatePortfolioItemHandler(req: Request, res: Response): P
 export async function deletePortfolioItemHandler(req: Request, res: Response): Promise<void> {
   await influencersService.deletePortfolioItem(req.user.sub, req.params.itemId);
   sendSuccess(res, { message: 'Portfolio item deleted' });
+}
+
+export async function toggleBookmarkHandler(req: Request, res: Response): Promise<void> {
+  const brandId = req.user.brandId;
+  if (!brandId) throw new BadRequestError('Only brands can bookmark influencers');
+  const result = await influencersService.toggleInfluencerBookmark(brandId, req.params.id);
+  sendSuccess(res, result);
 }

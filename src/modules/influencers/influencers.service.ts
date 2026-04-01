@@ -1,4 +1,4 @@
-import { eq, ilike, and, gte, lte, inArray, or, sql } from 'drizzle-orm';
+import { eq, ilike, and, gte, lte, inArray, or, sql, isNotNull } from 'drizzle-orm';
 import { db } from '@/db';
 import {
   influencerProfiles,
@@ -8,6 +8,7 @@ import {
   brandProfiles,
   influencerPortfolios,
   bankDetails,
+  brandInfluencerBookmarks,
 } from '@/db/schema';
 import { NotFoundError, ConflictError, BadRequestError, ForbiddenError } from '@/shared/errors';
 import type { InfluencerProfile } from '@/db/schema';
@@ -141,6 +142,10 @@ export async function searchInfluencers(query: SearchInfluencersQuery) {
     conditions.push(inArray(influencerProfiles.tier, tiers as Exclude<InfluencerProfile['tier'], null>[]));
   }
 
+  if (query.savedOnly && query.brandId) {
+    conditions.push(isNotNull(brandInfluencerBookmarks.id));
+  }
+
   const where = conditions.length > 0 ? and(...conditions) : undefined;
 
   const rows = await db
@@ -159,9 +164,14 @@ export async function searchInfluencers(query: SearchInfluencersQuery) {
       isVerified: influencerProfiles.isVerified,
       userName: users.name,
       userAvatarUrl: users.avatarUrl,
+      isBookmarked: sql<boolean>`CASE WHEN ${brandInfluencerBookmarks.id} IS NOT NULL THEN TRUE ELSE FALSE END`
     })
     .from(influencerProfiles)
     .innerJoin(users, eq(users.id, influencerProfiles.userId))
+    .leftJoin(brandInfluencerBookmarks, and(
+      eq(brandInfluencerBookmarks.influencerId, influencerProfiles.id),
+      query.brandId ? eq(brandInfluencerBookmarks.brandId, query.brandId) : sql`FALSE`
+    ))
     .where(where)
     .limit(limit)
     .offset(offset);
@@ -171,6 +181,10 @@ export async function searchInfluencers(query: SearchInfluencersQuery) {
     .select({ count: sql<number>`count(*)::int` })
     .from(influencerProfiles)
     .innerJoin(users, eq(users.id, influencerProfiles.userId))
+    .leftJoin(brandInfluencerBookmarks, and(
+      eq(brandInfluencerBookmarks.influencerId, influencerProfiles.id),
+      query.brandId ? eq(brandInfluencerBookmarks.brandId, query.brandId) : sql`FALSE`
+    ))
     .where(where);
 
   return {
@@ -179,7 +193,7 @@ export async function searchInfluencers(query: SearchInfluencersQuery) {
   };
 }
 
-export async function getInfluencerById(id: string) {
+export async function getInfluencerById(id: string, brandId?: string) {
   const [profile] = await db
     .select({
       id: influencerProfiles.id,
@@ -196,9 +210,14 @@ export async function getInfluencerById(id: string) {
       isVerified: influencerProfiles.isVerified,
       userName: users.name,
       userAvatarUrl: users.avatarUrl,
+      isBookmarked: sql<boolean>`CASE WHEN ${brandInfluencerBookmarks.id} IS NOT NULL THEN TRUE ELSE FALSE END`
     })
     .from(influencerProfiles)
     .innerJoin(users, eq(users.id, influencerProfiles.userId))
+    .leftJoin(brandInfluencerBookmarks, and(
+      eq(brandInfluencerBookmarks.influencerId, influencerProfiles.id),
+      brandId ? eq(brandInfluencerBookmarks.brandId, brandId) : sql`FALSE`
+    ))
     .where(eq(influencerProfiles.id, id))
     .limit(1);
 
@@ -346,4 +365,29 @@ export async function deletePortfolioItem(userId: string, itemId: string) {
 
   if (!deleted) throw new NotFoundError('Portfolio item');
   return { success: true };
+}
+
+// ─── Bookmarks ───────────────────────────────────────────────────────────────
+
+export async function toggleInfluencerBookmark(brandId: string, influencerId: string) {
+  const [existing] = await db
+    .select()
+    .from(brandInfluencerBookmarks)
+    .where(
+      and(
+        eq(brandInfluencerBookmarks.brandId, brandId),
+        eq(brandInfluencerBookmarks.influencerId, influencerId)
+      )
+    )
+    .limit(1);
+
+  if (existing) {
+    await db
+      .delete(brandInfluencerBookmarks)
+      .where(eq(brandInfluencerBookmarks.id, existing.id));
+    return { isBookmarked: false };
+  } else {
+    await db.insert(brandInfluencerBookmarks).values({ brandId, influencerId });
+    return { isBookmarked: true };
+  }
 }

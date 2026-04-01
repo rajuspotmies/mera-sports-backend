@@ -41,7 +41,7 @@ export async function listApplications(
     // so the brand can always see every influencer's current status in this campaign
     const allVisibleStatuses = [
       'invited', 'applied', 'negotiating', 'accepted', 'payment_pending',
-      'paid', 'script_pending', 'script_review', 'work_pending', 'work_review',
+      'paid', 'product_pending', 'script_pending', 'script_review', 'work_pending', 'work_review',
       'completed', 'settled', 'rejected', 'withdrawn',
     ];
     conditions.push(inArray(campaignInfluencers.status, allVisibleStatuses as any));

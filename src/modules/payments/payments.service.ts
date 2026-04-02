@@ -41,7 +41,12 @@ async function advanceCIsAfterPayment(ciIds: string[], campaignId: string, txDB:
     .where(eq(campaigns.id, campaignId))
     .limit(1);
 
-  const nextStatus = campaign?.scriptType === 'creator' ? 'script_pending' : 'work_pending';
+  let nextStatus: any;
+  if (campaign?.budgetMode === 'product' || campaign?.budgetMode === 'paid_product') {
+    nextStatus = 'product_pending';
+  } else {
+    nextStatus = campaign?.scriptType === 'creator' ? 'script_pending' : 'work_pending';
+  }
 
   await txDB
     .update(campaignInfluencers)

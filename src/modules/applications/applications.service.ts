@@ -6,6 +6,7 @@ import {
   influencerProfiles,
   users,
   brandProfiles,
+  bankDetails,
 } from '@/db/schema';
 import {
   NotFoundError,
@@ -166,6 +167,8 @@ export async function applyToCampaign(
 ) {
   if (!influencerUser.influencerId) throw new ForbiddenError('Influencer profile not found');
 
+  await assertInfluencerProfileComplete(influencerUser.influencerId, influencerUser.sub);
+
   const [campaignData] = await db
     .select({
       id: campaigns.id,
@@ -283,6 +286,8 @@ export async function acceptInvite(
   influencerUser: JWTPayload
 ) {
   if (!influencerUser.influencerId) throw new ForbiddenError('Influencer profile not found');
+
+  await assertInfluencerProfileComplete(influencerUser.influencerId, influencerUser.sub);
 
   const ci = await getCIOrThrow(campaignId, influencerUser.influencerId);
 
@@ -557,7 +562,11 @@ export async function markProductShipped(
 
   const [updated] = await db
     .update(campaignInfluencers)
-    .set({ productShippedAt: new Date(), updatedAt: new Date() })
+    .set({ 
+      productShippedAt: new Date(), 
+      status: ci.status === 'accepted' ? 'product_pending' : ci.status,
+      updatedAt: new Date() 
+    })
     .where(eq(campaignInfluencers.id, appId))
     .returning();
 
@@ -606,10 +615,13 @@ export async function confirmProductReceived(
     throw new BadRequestError('This campaign does not involve a product');
   }
 
+  const nextStatus = ciData.scriptType === 'creator' ? 'script_pending' : 'work_pending';
+
   const [updated] = await db
     .update(campaignInfluencers)
     .set({ 
       productReceivedAt: new Date(), 
+      status: ci.status === 'product_pending' ? nextStatus as any : ci.status,
       updatedAt: new Date() 
     })
     .where(eq(campaignInfluencers.id, ci.id))
@@ -656,10 +668,13 @@ export async function forceProductDelivered(
     throw new BadRequestError('This campaign does not involve a product');
   }
 
+  const nextStatus = ciData.scriptType === 'creator' ? 'script_pending' : 'work_pending';
+
   const [updated] = await db
     .update(campaignInfluencers)
     .set({ 
       productReceivedAt: new Date(), 
+      status: ci.status === 'product_pending' ? nextStatus as any : ci.status,
       updatedAt: new Date() 
     })
     .where(eq(campaignInfluencers.id, appId))
@@ -708,5 +723,36 @@ async function getCIOrThrow(campaignId: string, influencerId: string) {
 
   if (!ci) throw new NotFoundError('Application / invite not found');
   return ci;
+}
+
+async function assertInfluencerProfileComplete(influencerId: string, userId: string) {
+  const [profile] = await db
+    .select({
+      bio: influencerProfiles.bio,
+      niches: influencerProfiles.niches,
+      featuredPortfolioIds: influencerProfiles.featuredPortfolioIds,
+    })
+    .from(influencerProfiles)
+    .where(eq(influencerProfiles.id, influencerId))
+    .limit(1);
+
+  if (!profile) throw new ForbiddenError('Influencer profile not found');
+
+  const missing: string[] = [];
+  if (!profile.bio || !profile.bio.trim()) missing.push('Bio');
+  if (!profile.niches || profile.niches.length === 0) missing.push('Category');
+  if (!profile.featuredPortfolioIds || profile.featuredPortfolioIds.length === 0) missing.push('Portfolio');
+
+  const [bank] = await db
+    .select({ id: bankDetails.id })
+    .from(bankDetails)
+    .where(eq(bankDetails.userId, userId))
+    .limit(1);
+
+  if (!bank) missing.push('Bank Details');
+
+  if (missing.length > 0) {
+    throw new BadRequestError(`Complete your profile to proceed: missing ${missing.join(', ')}.`);
+  }
 }
 

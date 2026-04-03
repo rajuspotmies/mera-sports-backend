@@ -1,5 +1,6 @@
 import type { Request, Response } from 'express';
 import * as campaignsService from './campaigns.service';
+import * as influencersService from '../influencers/influencers.service';
 import { sendSuccess, sendCreated } from '@/shared/utils/response';
 import { BadRequestError } from '@/shared/errors';
 import { getPublicUrl } from '@/config/s3';
@@ -56,4 +57,12 @@ export async function uploadThumbnailHandler(req: Request, res: Response): Promi
   const fileUrl = getPublicUrl(key);
   const result = await campaignsService.updateCampaignThumbnail(req.params.id, req.user, fileUrl);
   sendSuccess(res, result);
+}
+
+export async function inviteInfluencersHandler(req: Request, res: Response): Promise<void> {
+  const result = await influencersService.inviteInfluencers(req.user, {
+    ...req.body,
+    campaignId: req.params.id, // Override campaignId from URL param
+  });
+  sendSuccess(res, result, 201);
 }

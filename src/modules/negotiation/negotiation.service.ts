@@ -21,11 +21,30 @@ export async function getNegotiationHistory(
     .where(eq(negotiations.campaignInfluencerId, ci.id))
     .orderBy(asc(negotiations.createdAt));
 
+  // Determine who made the last offer
+  let lastOfferBy: 'brand' | 'influencer';
+  if (history.length > 0) {
+    lastOfferBy = history[history.length - 1].party;
+  } else {
+    // If no negotiation history, fall back to the initial offer based on origin
+    lastOfferBy = ci.origin === 'brand_invite' ? 'brand' : 'influencer';
+  }
+
+  const requesterRole = requester.role === 'brand_owner' || requester.role === 'admin' ? 'brand' : 'influencer';
+  const isMyTurn = requesterRole !== lastOfferBy;
+
   return {
+    campaignId: ci.campaignId,
+    influencerId: ci.influencerId,
     campaignInfluencerId: ci.id,
     status: ci.status,
     tierRate: ci.tierRate,
     agreedBudget: ci.agreedBudget,
+    lastOfferBy,
+    permissions: {
+      canAccept: isMyTurn && ['invited', 'applied', 'negotiating'].includes(ci.status),
+      canCounter: isMyTurn && ['invited', 'applied', 'negotiating', 'accepted'].includes(ci.status),
+    },
     history,
   };
 }
@@ -109,6 +128,21 @@ export async function acceptOffer(
     );
   }
 
+  // Verify that the requester is NOT the one who made the last offer
+  const [lastNegotiation] = await db
+    .select({ party: negotiations.party })
+    .from(negotiations)
+    .where(eq(negotiations.campaignInfluencerId, ci.id))
+    .orderBy(sql`${negotiations.createdAt} DESC`)
+    .limit(1);
+
+  const lastOfferBy = lastNegotiation ? lastNegotiation.party : (ci.origin === 'brand_invite' ? 'brand' : 'influencer');
+  const requesterRole = requester.role === 'brand_owner' || requester.role === 'admin' ? 'brand' : 'influencer';
+
+  if (requesterRole === lastOfferBy) {
+    throw new BadRequestError('You cannot accept your own offer. Please wait for the other party to respond.');
+  }
+
   const party: 'brand' | 'influencer' =
     requester.role === 'brand_owner' || requester.role === 'admin' ? 'brand' : 'influencer';
 
@@ -177,6 +211,7 @@ async function getCIAndVerifyAccess(
       id: campaignInfluencers.id,
       campaignId: campaignInfluencers.campaignId,
       influencerId: campaignInfluencers.influencerId,
+      origin: campaignInfluencers.origin,
       status: campaignInfluencers.status,
       tierRate: campaignInfluencers.tierRate,
       agreedBudget: campaignInfluencers.agreedBudget,

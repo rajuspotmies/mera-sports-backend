@@ -51,12 +51,19 @@ export interface SendPushResult {
 /**
  * Send a push notification to specific device tokens.
  * Returns invalid tokens so callers can remove them from the DB.
+ *
+ * @param category - iOS APS category / Android click_action that activates notification
+ *   action buttons registered on the client. Supported values:
+ *   - 'chat'     → "Mark as Read" button
+ *   - 'campaign' → "View" button
+ *   - 'payment'  → "View" button
  */
 export async function sendPushNotification(
   tokens: string[],
   title: string,
   body: string,
-  data?: Record<string, string>
+  data?: Record<string, string>,
+  category?: string
 ): Promise<SendPushResult | undefined> {
   if (!appInitialized) {
     logger.warn('FCM not initialized; push notification skipped.');
@@ -74,6 +81,8 @@ export async function sendPushNotification(
       notification: {
         sound: 'default',
         channelId: 'default',
+        // Enables notification action buttons registered on the client for this category
+        ...(category ? { clickAction: category } : {}),
       },
     },
     apns: {
@@ -82,6 +91,8 @@ export async function sendPushNotification(
           sound: 'default',
           badge: 1,
           contentAvailable: true,
+          // Tells iOS which UNNotificationCategory to use for action buttons
+          ...(category ? { category } : {}),
         },
       },
       headers: {

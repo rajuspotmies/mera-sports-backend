@@ -8,6 +8,15 @@ import {
 } from '@/modules/notifications/notifications.service';
 import { sendPushNotification } from '@/shared/services/fcm.service';
 
+/** Map a notification type to the FCM category identifier used for action buttons on iOS/Android. */
+function notificationCategory(type: string): string | undefined {
+  if (type === 'chat') return 'chat';
+  if (['application', 'campaign_invite', 'negotiation', 'script', 'submission'].includes(type))
+    return 'campaign';
+  if (type === 'payment') return 'payment';
+  return undefined;
+}
+
 /** Job data when enqueued from createNotification(): full notification row (id, userId, type, title, message, actionUrl, campaignId, ...). */
 function isFullNotification(
   data: unknown
@@ -18,6 +27,8 @@ function isFullNotification(
   type: string;
   actionUrl?: string | null;
   campaignId?: string | null;
+  campaignName?: string | null;
+  influencerName?: string | null;
 } {
   return (
     typeof data === 'object' &&
@@ -60,7 +71,13 @@ export async function processNotificationJob(job: Job) {
           const conversationId = parseConversationIdFromActionUrl(data.actionUrl, data.type);
           if (conversationId) fcmData.conversationId = conversationId;
         }
-        const result = await sendPushNotification(tokens, data.title, data.message, fcmData);
+        const result = await sendPushNotification(
+          tokens,
+          data.title,
+          data.message,
+          fcmData,
+          notificationCategory(data.type)
+        );
         if (result?.invalidTokens.length) {
           for (const t of result.invalidTokens) await unregisterFcmToken(t);
         }
@@ -76,15 +93,29 @@ export async function processNotificationJob(job: Job) {
           type: data.type,
           actionUrl: data.actionUrl || '',
         };
+
+        // Chat: extract conversationId from actionUrl for direct navigation on tap
         if (data.type === 'chat' && data.actionUrl) {
           const conversationId = parseConversationIdFromActionUrl(data.actionUrl, data.type);
           if (conversationId) fcmData.conversationId = conversationId;
         }
-        // campaign_invite: include campaignId so app can show Accept/Decline action buttons
-        if (data.type === 'campaign_invite' && data.campaignId) {
+
+        // All campaign-related types: include campaignId and campaignName for navigation
+        const isCampaignType = ['application', 'campaign_invite', 'negotiation', 'script', 'submission'].includes(data.type);
+        if (isCampaignType && data.campaignId) {
           fcmData.campaignId = data.campaignId;
         }
-        const result = await sendPushNotification(tokens, data.title, data.message, fcmData);
+        if (data.campaignName) {
+          fcmData.campaignName = data.campaignName;
+        }
+
+        const result = await sendPushNotification(
+          tokens,
+          data.title,
+          data.message,
+          fcmData,
+          notificationCategory(data.type)
+        );
         if (result?.invalidTokens.length) {
           for (const t of result.invalidTokens) await unregisterFcmToken(t);
         }

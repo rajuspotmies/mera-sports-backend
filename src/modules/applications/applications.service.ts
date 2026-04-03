@@ -7,6 +7,7 @@ import {
   users,
   brandProfiles,
   bankDetails,
+  influencerPortfolios,
 } from '@/db/schema';
 import {
   NotFoundError,
@@ -741,7 +742,17 @@ async function assertInfluencerProfileComplete(influencerId: string, userId: str
   const missing: string[] = [];
   if (!profile.bio || !profile.bio.trim()) missing.push('Bio');
   if (!profile.niches || profile.niches.length === 0) missing.push('Category');
-  if (!profile.featuredPortfolioIds || profile.featuredPortfolioIds.length === 0) missing.push('Portfolio');
+  if (!profile.featuredPortfolioIds || profile.featuredPortfolioIds.length === 0) {
+    // Check if influencer has ANY portfolio item
+    const [{ count }] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(influencerPortfolios)
+      .where(eq(influencerPortfolios.influencerId, influencerId));
+
+    if (count === 0) {
+      missing.push('Portfolio');
+    }
+  }
 
   const [bank] = await db
     .select({ id: bankDetails.id })

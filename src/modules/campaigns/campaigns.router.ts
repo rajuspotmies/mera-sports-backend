@@ -92,6 +92,13 @@ router.post(
   asyncHandler(ctrl.uploadThumbnailHandler)
 );
 
+router.post(
+  '/:id/invite',
+  authenticate(),
+  authorize('brand_owner', 'admin'),
+  asyncHandler(ctrl.inviteInfluencersHandler)
+);
+
 
 // ─── Nested sub-routes ────────────────────────────────────────────────────────
 // Mount with :campaignId param (re-parameterize from :id to :campaignId for sub-routers)

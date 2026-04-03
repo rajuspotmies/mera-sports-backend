@@ -1,6 +1,6 @@
 import { eq, and } from 'drizzle-orm';
 import { db } from '@/db';
-import { scriptVersions, campaignInfluencers, campaigns, brandProfiles, influencerProfiles } from '@/db/schema';
+import { scriptVersions, campaignInfluencers, campaigns, brandProfiles, influencerProfiles, users } from '@/db/schema';
 import { createNotification } from '../notifications/notifications.service';
 import { NotFoundError, ForbiddenError, BadRequestError } from '@/shared/errors';
 import type { JWTPayload } from '@/shared/types/api';
@@ -9,12 +9,28 @@ export async function listScriptsForCampaign(campaignId: string, brandUser: JWTP
   await assertBrandOwnsCampaign(campaignId, brandUser);
 
   const rows = await db
-    .select()
+    .select({
+      version: scriptVersions,
+      ci: campaignInfluencers,
+      influencerName: users.name,
+      influencerHandle: influencerProfiles.handle,
+      influencerAvatar: users.avatarUrl,
+    })
     .from(scriptVersions)
     .innerJoin(campaignInfluencers, eq(campaignInfluencers.id, scriptVersions.campaignInfluencerId))
+    .leftJoin(influencerProfiles, eq(influencerProfiles.id, campaignInfluencers.influencerId))
+    .leftJoin(users, eq(users.id, influencerProfiles.userId))
     .where(eq(campaignInfluencers.campaignId, campaignId));
 
-  return rows.map((r) => ({ ...r.script_versions, ci: r.campaign_influencers }));
+  return rows.map((r) => ({
+    ...r.version,
+    ci: r.ci,
+    influencerId: r.ci.influencerId,
+    influencerName: r.influencerName,
+    influencerHandle: r.influencerHandle,
+    influencerAvatar: r.influencerAvatar,
+    _debug: 'v2', // Visible field to check if code updated
+  }));
 }
 
 export async function getScriptsForInfluencer(campaignId: string, influencerUser: JWTPayload) {

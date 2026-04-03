@@ -26,6 +26,7 @@ export async function listSubmissions(campaignId: string, brandUser: JWTPayload)
   return rows.map((r) => ({
     ...r.submission,
     ci: r.ci,
+    influencerId: r.ci.influencerId,
     influencerName: r.influencerName,
     influencerHandle: r.influencerHandle,
     influencerAvatar: r.influencerAvatar,

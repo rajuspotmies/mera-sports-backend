@@ -1,13 +1,5 @@
-import bcrypt from 'bcryptjs';
-import jwt from 'jsonwebtoken';
-import crypto from 'crypto';
-import { eq, and, gt, sql } from 'drizzle-orm';
 import { db } from '@/db';
 import { users, brandProfiles, influencerProfiles, refreshTokens, campaigns, campaignInfluencers, otpCodes, bankDetails } from '@/db/schema';
-import { emailQueue } from '@/jobs/queue';
-import { env } from '@/config/env';
-import { db } from '@/db';
-import { brandProfiles, campaignInfluencers, campaigns, influencerProfiles, otpCodes, refreshTokens, users } from '@/db/schema';
 import {
     BadRequestError,
     ConflictError,
@@ -21,6 +13,8 @@ import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import { and, eq, gt, sql } from 'drizzle-orm';
 import jwt from 'jsonwebtoken';
+import { emailQueue } from '@/jobs/queue';
+import { env } from '@/config/env';
 import { sendWhatsAppOTP } from '../notifications/whatsapp.service';
 import type { ChangePasswordDTO, ForgotPasswordDTO, LoginDTO, RegisterDTO, ResetPasswordDTO, SendOtpDTO, UpdateMeDTO, VerifyOtpDTO } from './auth.schema';
 
@@ -130,19 +124,23 @@ export async function login(dto: LoginDTO) {
   const [user] = await db.select().from(users).where(eq(users.email, dto.email)).limit(1);
 
   if (!user) {
+    logger.warn(`[Login] User not found: ${dto.email}`);
     throw new UnauthorizedError('Invalid email or password');
   }
 
   if (!user.isActive) {
+    logger.warn(`[Login] User inactive: ${dto.email}`);
     throw new UnauthorizedError('Invalid email or password');
   }
 
   if (!user.passwordHash) {
+    logger.warn(`[Login] Missing passwordHash: ${dto.email}`);
     throw new UnauthorizedError('Invalid email or password');
   }
 
   const passwordMatch = await bcrypt.compare(dto.password, user.passwordHash);
   if (!passwordMatch) {
+    logger.warn(`[Login] Password mismatch: ${dto.email}`);
     throw new UnauthorizedError('Invalid email or password');
   }
 

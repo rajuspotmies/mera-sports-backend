@@ -9,6 +9,7 @@ import {
   influencerProfiles,
   campaignPayments,
   campaignPaymentItems,
+  workSubmissions,
 } from '@/db/schema';
 import { eq, and, inArray, sql } from 'drizzle-orm';
 import { AppError, BadRequestError, NotFoundError, ForbiddenError } from '@/shared/errors';
@@ -113,6 +114,54 @@ async function sendPaymentNotifications(
   }
 }
 
+async function getEligibleFinalCampaignInfluencerIds(campaignId: string): Promise<string[]> {
+  // 1) Candidates: creators who have at least one approved work submission.
+  const approvedRows = await db
+    .select({ id: campaignInfluencers.id })
+    .from(campaignInfluencers)
+    .innerJoin(
+      workSubmissions,
+      eq(workSubmissions.campaignInfluencerId, campaignInfluencers.id)
+    )
+    .where(
+      and(
+        eq(campaignInfluencers.campaignId, campaignId),
+        eq(workSubmissions.status, 'approved'),
+        inArray(campaignInfluencers.status, [
+          'work_pending',
+          'work_review',
+          'completed',
+          'payment_pending',
+          'paid',
+        ])
+      )
+    )
+    .groupBy(campaignInfluencers.id);
+
+  const candidateIds = approvedRows.map((r) => r.id);
+  if (!candidateIds.length) return [];
+
+  // 2) Exclude creators who already have a captured FINAL payment item.
+  const alreadyPaidFinalRows = await db
+    .select({ id: campaignPaymentItems.campaignInfluencerId })
+    .from(campaignPaymentItems)
+    .innerJoin(
+      campaignPayments,
+      eq(campaignPayments.id, campaignPaymentItems.campaignPaymentId)
+    )
+    .where(
+      and(
+        eq(campaignPayments.campaignId, campaignId),
+        eq(campaignPayments.paymentType, 'final'),
+        eq(campaignPayments.status, 'captured')
+      )
+    )
+    .groupBy(campaignPaymentItems.campaignInfluencerId);
+
+  const alreadyPaidSet = new Set(alreadyPaidFinalRows.map((r) => r.id));
+  return candidateIds.filter((id) => !alreadyPaidSet.has(id));
+}
+
 async function assertBrandOwnsCampaign(campaignId: string, user: JWTPayload) {
   if (user.role !== 'admin' && !user.brandId) {
     throw new ForbiddenError('Brand profile not found');
@@ -150,6 +199,11 @@ export async function initiatePaymentRound(
 
   const eligibleStatus = paymentType === 'advance' ? 'accepted' : 'work_review';
 
+  let eligibleFinalCiIds: string[] = [];
+  if (paymentType === 'final') {
+    eligibleFinalCiIds = await getEligibleFinalCampaignInfluencerIds(campaignId);
+  }
+
   let eligibleCIs = await db
     .select({
       id: campaignInfluencers.id,
@@ -165,7 +219,9 @@ export async function initiatePaymentRound(
     .where(
       and(
         eq(campaignInfluencers.campaignId, campaignId),
-        eq(campaignInfluencers.status, eligibleStatus)
+        paymentType === 'advance'
+          ? eq(campaignInfluencers.status, eligibleStatus)
+          : inArray(campaignInfluencers.id, eligibleFinalCiIds)
       )
     );
 
@@ -178,7 +234,7 @@ export async function initiatePaymentRound(
     throw new BadRequestError(
       paymentType === 'advance'
         ? 'No eligible accepted influencers found for payment.'
-        : 'No eligible work_review influencers found for payment.'
+        : 'No eligible approved influencers found for final payment.'
     );
   }
 
@@ -690,15 +746,22 @@ export async function getCampaignPaymentSummary(campaignId: string, requester: J
       and(eq(campaignInfluencers.campaignId, campaignId), eq(campaignInfluencers.status, 'accepted'))
     );
 
-  const [unpaidFinal] = await db
-    .select({
-      count: sql<number>`count(*)::int`,
-      totalBudget: sql<number>`coalesce(sum(coalesce(agreed_budget, tier_rate, 0)::numeric), 0)::float`,
-    })
-    .from(campaignInfluencers)
-    .where(
-      and(eq(campaignInfluencers.campaignId, campaignId), eq(campaignInfluencers.status, 'work_review'))
-    );
+  const approvedFinalCiIds = await getEligibleFinalCampaignInfluencerIds(campaignId);
+
+  const unpaidFinal = approvedFinalCiIds.length
+    ? (await db
+        .select({
+          count: sql<number>`count(*)::int`,
+          totalBudget: sql<number>`coalesce(sum(coalesce(agreed_budget, tier_rate, 0)::numeric), 0)::float`,
+        })
+        .from(campaignInfluencers)
+        .where(
+          and(
+            eq(campaignInfluencers.campaignId, campaignId),
+            inArray(campaignInfluencers.id, approvedFinalCiIds)
+          )
+        ))[0]
+    : { count: 0, totalBudget: 0 };
 
   const feePercent = Number(campaign.platformFeePercent ?? 10);
 

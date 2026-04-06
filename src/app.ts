@@ -2,10 +2,11 @@ import express from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
-import path from 'path';
+import swaggerUi from 'swagger-ui-express';
 import { env } from './config/env';
 import { errorHandler } from './middleware/errorHandler';
 import { apiLimiter } from './middleware/rateLimiter';
+import { swaggerSpec } from './swagger';
 
 // Routers
 import adminRouter from './modules/admin/admin.router';
@@ -77,6 +78,9 @@ export function createApp() {
 
   // ─── Static file serving (uploaded files) ─────────────────────────────────
   // No longer needed: files are served directly from S3 / Railway Buckets
+
+  // ─── API docs ─────────────────────────────────────────────────────────────
+  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, { explorer: true }));
 
   // ─── Health check (no auth, no rate limit) ───────────────────────────────
   app.get('/health', (_req, res) => {

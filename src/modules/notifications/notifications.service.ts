@@ -27,8 +27,8 @@ export function parseConversationIdFromActionUrl(
 export async function createNotification(data: Omit<NewNotification, 'id' | 'createdAt'>) {
   const [notification] = await db.insert(notifications).values(data).returning();
 
-  // Real-time emission to the target user (matches frontend WS_EVENTS.NOTIFICATION)
-  emitToUser(data.userId, 'notification:new', notification);
+  // Real-time emission to the target user
+  emitToUser(data.userId, 'NOTIFICATION', notification);
 
   // Queue background tasks (production-grade async delivery path)
   await notificationQueue.add('process-notification', notification, {

@@ -277,6 +277,9 @@ export async function applyToCampaign(
     actionUrl: `/campaigns/${campaignId}/applications`,
   });
 
+  // ─── Real-time update to brand (counter update) ───────────────────────
+  emitToUser(campaignData.brandUserId, 'CAMPAIGN_UPDATED', { id: campaignId });
+
   return ci;
 }
 

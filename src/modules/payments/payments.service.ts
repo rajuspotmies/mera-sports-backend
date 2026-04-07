@@ -162,6 +162,77 @@ async function getEligibleFinalCampaignInfluencerIds(campaignId: string): Promis
   return candidateIds.filter((id) => !alreadyPaidSet.has(id));
 }
 
+async function getFinalPaymentEligibilityDebug(campaignId: string) {
+  const allowedStatuses = [
+    'work_pending',
+    'work_review',
+    'completed',
+    'payment_pending',
+    'paid',
+  ];
+
+  const approvedRows = await db
+    .select({
+      ciId: campaignInfluencers.id,
+      ciStatus: campaignInfluencers.status,
+      influencerId: campaignInfluencers.influencerId,
+    })
+    .from(campaignInfluencers)
+    .innerJoin(
+      workSubmissions,
+      eq(workSubmissions.campaignInfluencerId, campaignInfluencers.id)
+    )
+    .where(
+      and(
+        eq(campaignInfluencers.campaignId, campaignId),
+        eq(workSubmissions.status, 'approved')
+      )
+    )
+    .groupBy(campaignInfluencers.id, campaignInfluencers.status, campaignInfluencers.influencerId);
+
+  const approvedCiIds = approvedRows.map((r) => r.ciId);
+
+  const paidFinalRows = await db
+    .select({ ciId: campaignPaymentItems.campaignInfluencerId })
+    .from(campaignPaymentItems)
+    .innerJoin(
+      campaignPayments,
+      eq(campaignPayments.id, campaignPaymentItems.campaignPaymentId)
+    )
+    .where(
+      and(
+        eq(campaignPayments.campaignId, campaignId),
+        eq(campaignPayments.paymentType, 'final'),
+        eq(campaignPayments.status, 'captured')
+      )
+    )
+    .groupBy(campaignPaymentItems.campaignInfluencerId);
+
+  const paidFinalSet = new Set(paidFinalRows.map((r) => r.ciId));
+
+  const statusExcludedCiIds = approvedRows
+    .filter((r) => !allowedStatuses.includes(String(r.ciStatus)))
+    .map((r) => r.ciId);
+
+  const eligibleCiIds = approvedRows
+    .filter((r) => allowedStatuses.includes(String(r.ciStatus)))
+    .map((r) => r.ciId)
+    .filter((id) => !paidFinalSet.has(id));
+
+  return {
+    allowedStatuses,
+    approvedCiIds,
+    approvedByStatus: approvedRows.map((r) => ({
+      ciId: r.ciId,
+      status: r.ciStatus,
+      influencerId: r.influencerId,
+    })),
+    statusExcludedCiIds,
+    alreadyPaidFinalCiIds: Array.from(paidFinalSet),
+    eligibleCiIds,
+  };
+}
+
 async function assertBrandOwnsCampaign(campaignId: string, user: JWTPayload) {
   if (user.role !== 'admin' && !user.brandId) {
     throw new ForbiddenError('Brand profile not found');
@@ -719,7 +790,11 @@ export async function handleCampaignPaymentFailure(cfOrderId: string) {
 
 // ─── Get payment summary ──────────────────────────────────────────────────────
 
-export async function getCampaignPaymentSummary(campaignId: string, requester: JWTPayload) {
+export async function getCampaignPaymentSummary(
+  campaignId: string,
+  requester: JWTPayload,
+  options?: { includeDebug?: boolean }
+) {
   const campaign = await assertBrandOwnsCampaign(campaignId, requester);
 
   const paymentRounds = await db
@@ -765,7 +840,7 @@ export async function getCampaignPaymentSummary(campaignId: string, requester: J
 
   const feePercent = Number(campaign.platformFeePercent ?? 10);
 
-  return {
+  const summary = {
     campaignId,
     budgetTotal: campaign.budgetTotal ? Number(campaign.budgetTotal) : null,
     platformFeePercent: feePercent,
@@ -784,6 +859,18 @@ export async function getCampaignPaymentSummary(campaignId: string, requester: J
       grandTotal: unpaidFinal.totalBudget * 0.5 * (1 + feePercent / 100),
     },
   };
+
+  if (options?.includeDebug) {
+    const debug = await getFinalPaymentEligibilityDebug(campaignId);
+    return {
+      ...summary,
+      debug: {
+        finalEligibility: debug,
+      },
+    };
+  }
+
+  return summary;
 }
 
 // ─── Get payment round details ────────────────────────────────────────────────

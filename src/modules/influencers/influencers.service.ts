@@ -149,6 +149,9 @@ export async function searchInfluencers(query: SearchInfluencersQuery) {
     conditions.push(isNotNull(brandInfluencerBookmarks.id));
   }
 
+  // Do not show deleted/deactivated accounts in brand discover.
+  conditions.push(eq(users.isActive, true));
+
   const where = conditions.length > 0 ? and(...conditions) : undefined;
 
   const rows = await db
@@ -158,19 +161,22 @@ export async function searchInfluencers(query: SearchInfluencersQuery) {
       bio: influencerProfiles.bio,
       location: influencerProfiles.location,
       niches: influencerProfiles.niches,
+      featuredPortfolioIds: influencerProfiles.featuredPortfolioIds,
+      portfolioUrls: influencerProfiles.portfolioUrls,
       tier: influencerProfiles.tier,
       followerCount: influencerProfiles.followerCount,
       engagementRate: influencerProfiles.engagementRate,
       platforms: influencerProfiles.platforms,
       rateCard: influencerProfiles.rateCard,
-      portfolioUrls: influencerProfiles.portfolioUrls,
       isVerified: influencerProfiles.isVerified,
       userName: users.name,
       userAvatarUrl: users.avatarUrl,
+      bankDetailsId: bankDetails.id,
       isBookmarked: sql<boolean>`CASE WHEN ${brandInfluencerBookmarks.id} IS NOT NULL THEN TRUE ELSE FALSE END`
     })
     .from(influencerProfiles)
     .innerJoin(users, eq(users.id, influencerProfiles.userId))
+    .leftJoin(bankDetails, eq(bankDetails.userId, users.id))
     .leftJoin(brandInfluencerBookmarks, and(
       eq(brandInfluencerBookmarks.influencerId, influencerProfiles.id),
       query.brandId ? eq(brandInfluencerBookmarks.brandId, query.brandId) : sql`FALSE`
@@ -191,7 +197,11 @@ export async function searchInfluencers(query: SearchInfluencersQuery) {
     .where(where);
 
   return {
-    influencers: rows,
+    influencers: rows.map((row: any) => ({
+      ...row,
+      profileComplete: isInfluencerProfileComplete(row),
+      profileCompletionIssues: getInfluencerProfileCompletionIssues(row),
+    })),
     meta: buildPaginationMeta(count, { page, limit }),
   };
 }
@@ -204,24 +214,27 @@ export async function getInfluencerById(id: string, brandId?: string) {
       bio: influencerProfiles.bio,
       location: influencerProfiles.location,
       niches: influencerProfiles.niches,
+      featuredPortfolioIds: influencerProfiles.featuredPortfolioIds,
+      portfolioUrls: influencerProfiles.portfolioUrls,
       tier: influencerProfiles.tier,
       followerCount: influencerProfiles.followerCount,
       engagementRate: influencerProfiles.engagementRate,
       platforms: influencerProfiles.platforms,
       rateCard: influencerProfiles.rateCard,
-      portfolioUrls: influencerProfiles.portfolioUrls,
       isVerified: influencerProfiles.isVerified,
       userName: users.name,
       userAvatarUrl: users.avatarUrl,
+      bankDetailsId: bankDetails.id,
       isBookmarked: sql<boolean>`CASE WHEN ${brandInfluencerBookmarks.id} IS NOT NULL THEN TRUE ELSE FALSE END`
     })
     .from(influencerProfiles)
     .innerJoin(users, eq(users.id, influencerProfiles.userId))
+    .leftJoin(bankDetails, eq(bankDetails.userId, users.id))
     .leftJoin(brandInfluencerBookmarks, and(
       eq(brandInfluencerBookmarks.influencerId, influencerProfiles.id),
       brandId ? eq(brandInfluencerBookmarks.brandId, brandId) : sql`FALSE`
     ))
-    .where(eq(influencerProfiles.id, id))
+    .where(and(eq(influencerProfiles.id, id), eq(users.isActive, true)))
     .limit(1);
 
   if (!profile) throw new NotFoundError('Influencer');
@@ -232,19 +245,38 @@ export async function getInfluencerById(id: string, brandId?: string) {
     .where(eq(influencerPortfolios.influencerId, profile.id))
     .orderBy(sql`${influencerPortfolios.createdAt} DESC`);
 
-  return { ...profile, portfolio };
+  return {
+    ...profile,
+    portfolio,
+    profileComplete: isInfluencerProfileComplete(profile),
+    profileCompletionIssues: getInfluencerProfileCompletionIssues(profile),
+  };
 }
 
 // ─── Invite (unified: accepts 1–50 influencerIds) ───────────────────────────
 
 async function inviteSingle(brandId: string, campaignId: string, campaign: { id: string; name: string; budgetTierPricing: unknown }, influencerId: string, message?: string) {
   const [influencer] = await db
-    .select({ id: influencerProfiles.id, tier: influencerProfiles.tier, userId: influencerProfiles.userId })
+    .select({
+      id: influencerProfiles.id,
+      tier: influencerProfiles.tier,
+      userId: influencerProfiles.userId,
+      bio: influencerProfiles.bio,
+      niches: influencerProfiles.niches,
+      featuredPortfolioIds: influencerProfiles.featuredPortfolioIds,
+      portfolioUrls: influencerProfiles.portfolioUrls,
+      bankDetailsId: bankDetails.id,
+    })
     .from(influencerProfiles)
+    .innerJoin(users, eq(users.id, influencerProfiles.userId))
+    .leftJoin(bankDetails, eq(bankDetails.userId, users.id))
     .where(eq(influencerProfiles.id, influencerId))
     .limit(1);
 
   if (!influencer) throw new NotFoundError('Influencer');
+  if (!isInfluencerProfileComplete(influencer)) {
+    throw new BadRequestError('Incomplete profile cannot accept this invite.');
+  }
 
   const tierPricing = (campaign.budgetTierPricing ?? []) as Array<{ tier: string; rate: number }>;
   const tierEntry = tierPricing.find((t) => t.tier === influencer.tier);
@@ -309,6 +341,21 @@ export async function inviteInfluencers(brandUser: JWTPayload, dto: InviteInflue
     .map((r) => ({ reason: r.reason?.message ?? 'Unknown error' }));
 
   return { succeeded, failed: failed.length, errors: failed, total: dto.influencerIds.length };
+}
+
+function getInfluencerProfileCompletionIssues(profile: Record<string, unknown>) {
+  const issues: string[] = [];
+  if (!String(profile.bio || '').trim()) issues.push('Bio');
+  if (!Array.isArray(profile.niches) || (profile.niches as unknown[]).length === 0) issues.push('Category');
+  const hasPortfolio = (Array.isArray(profile.featuredPortfolioIds) && (profile.featuredPortfolioIds as unknown[]).length > 0)
+    || (Array.isArray(profile.portfolioUrls) && (profile.portfolioUrls as unknown[]).length > 0);
+  if (!hasPortfolio) issues.push('Portfolio');
+  if (!profile.bankDetailsId) issues.push('Bank Details');
+  return issues;
+}
+
+function isInfluencerProfileComplete(profile: Record<string, unknown>) {
+  return getInfluencerProfileCompletionIssues(profile).length === 0;
 }
 
 // ─── Portfolio ───────────────────────────────────────────────────────────────

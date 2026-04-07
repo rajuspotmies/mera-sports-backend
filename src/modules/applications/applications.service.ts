@@ -77,6 +77,9 @@ export async function listApplications(
       followerCount: influencerProfiles.followerCount,
       engagementRate: influencerProfiles.engagementRate,
       niches: influencerProfiles.niches,
+      featuredPortfolioIds: influencerProfiles.featuredPortfolioIds,
+      portfolioUrls: influencerProfiles.portfolioUrls,
+      bankDetailsId: bankDetails.id,
       platforms: influencerProfiles.platforms,
       userName: users.name,
       userAvatarUrl: users.avatarUrl,
@@ -84,16 +87,23 @@ export async function listApplications(
     .from(campaignInfluencers)
     .innerJoin(influencerProfiles, eq(influencerProfiles.id, campaignInfluencers.influencerId))
     .innerJoin(users, eq(users.id, influencerProfiles.userId))
+    .leftJoin(bankDetails, eq(bankDetails.userId, users.id))
     .where(where)
     .limit(limit)
     .offset(offset);
+
+  const applications = rows.map((row: any) => ({
+    ...row,
+    profileComplete: isInfluencerProfileComplete(row),
+    profileCompletionIssues: getInfluencerProfileCompletionIssues(row),
+  }));
 
   const [{ count }] = await db
     .select({ count: sql<number>`count(*)::int` })
     .from(campaignInfluencers)
     .where(where);
 
-  return { applications: rows, meta: buildPaginationMeta(count, { page, limit }) };
+  return { applications, meta: buildPaginationMeta(count, { page, limit }) };
 }
 
 // ─── Status Board (brand side) ────────────────────────────────────────────────
@@ -141,22 +151,32 @@ export async function getStatusBoard(
       followerCount: influencerProfiles.followerCount,
       engagementRate: influencerProfiles.engagementRate,
       niches: influencerProfiles.niches,
+      featuredPortfolioIds: influencerProfiles.featuredPortfolioIds,
+      portfolioUrls: influencerProfiles.portfolioUrls,
+      bankDetailsId: bankDetails.id,
       userName: users.name,
       userAvatarUrl: users.avatarUrl,
     })
     .from(campaignInfluencers)
     .innerJoin(influencerProfiles, eq(influencerProfiles.id, campaignInfluencers.influencerId))
     .innerJoin(users, eq(users.id, influencerProfiles.userId))
+    .leftJoin(bankDetails, eq(bankDetails.userId, users.id))
     .where(where)
     .limit(limit)
     .offset(offset);
+
+  const applications = rows.map((row: any) => ({
+    ...row,
+    profileComplete: isInfluencerProfileComplete(row),
+    profileCompletionIssues: getInfluencerProfileCompletionIssues(row),
+  }));
 
   const [{ count }] = await db
     .select({ count: sql<number>`count(*)::int` })
     .from(campaignInfluencers)
     .where(where);
 
-  return { applications: rows, meta: buildPaginationMeta(count, { page, limit }) };
+  return { applications, meta: buildPaginationMeta(count, { page, limit }) };
 }
 
 // ─── Apply to campaign (influencer side) ─────────────────────────────────────
@@ -376,9 +396,15 @@ export async function approveApplication(
       ci: campaignInfluencers,
       influencerUserId: influencerProfiles.userId,
       campaignName: campaigns.name,
+      bio: influencerProfiles.bio,
+      niches: influencerProfiles.niches,
+      featuredPortfolioIds: influencerProfiles.featuredPortfolioIds,
+      portfolioUrls: influencerProfiles.portfolioUrls,
+      bankDetailsId: bankDetails.id,
     })
     .from(campaignInfluencers)
     .innerJoin(influencerProfiles, eq(influencerProfiles.id, campaignInfluencers.influencerId))
+    .leftJoin(bankDetails, eq(bankDetails.userId, influencerProfiles.userId))
     .innerJoin(campaigns, eq(campaigns.id, campaignInfluencers.campaignId))
     .where(and(eq(campaignInfluencers.id, appId), eq(campaignInfluencers.campaignId, campaignId)))
     .limit(1);
@@ -388,6 +414,11 @@ export async function approveApplication(
 
   if (!['applied', 'negotiating'].includes(ci.status)) {
     throw new BadRequestError(`Cannot approve application with status '${ci.status}'`);
+  }
+
+  if (!isInfluencerProfileComplete(ciData)) {
+    const missing = getInfluencerProfileCompletionIssues(ciData).join(', ');
+    throw new BadRequestError(`Incomplete profile cannot accept this invite. Missing: ${missing}.`);
   }
 
   const [updated] = await db
@@ -768,5 +799,20 @@ async function assertInfluencerProfileComplete(influencerId: string, userId: str
   if (missing.length > 0) {
     throw new BadRequestError(`Complete your profile to proceed: missing ${missing.join(', ')}.`);
   }
+}
+
+function getInfluencerProfileCompletionIssues(profile: Record<string, unknown>) {
+  const issues: string[] = [];
+  if (!String(profile.bio || '').trim()) issues.push('Bio');
+  if (!Array.isArray(profile.niches) || (profile.niches as unknown[]).length === 0) issues.push('Category');
+  const hasPortfolio = (Array.isArray(profile.featuredPortfolioIds) && (profile.featuredPortfolioIds as unknown[]).length > 0)
+    || (Array.isArray(profile.portfolioUrls) && (profile.portfolioUrls as unknown[]).length > 0);
+  if (!hasPortfolio) issues.push('Portfolio');
+  if (!profile.bankDetailsId) issues.push('Bank Details');
+  return issues;
+}
+
+function isInfluencerProfileComplete(profile: Record<string, unknown>) {
+  return getInfluencerProfileCompletionIssues(profile).length === 0;
 }
 

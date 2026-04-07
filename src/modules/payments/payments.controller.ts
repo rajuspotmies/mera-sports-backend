@@ -33,7 +33,8 @@ export async function cancelPaymentHandler(req: Request, res: Response) {
 
 export async function getPaymentSummaryHandler(req: Request, res: Response) {
   const { campaignId } = req.params;
-  const result = await paymentsService.getCampaignPaymentSummary(campaignId, req.user);
+  const includeDebug = req.query.debug === '1' || req.query.debug === 'true';
+  const result = await paymentsService.getCampaignPaymentSummary(campaignId, req.user, { includeDebug });
   sendSuccess(res, result);
 }
 

@@ -23,14 +23,27 @@ export async function listSubmissions(campaignId: string, brandUser: JWTPayload)
     .innerJoin(users, eq(users.id, influencerProfiles.userId))
     .where(eq(campaignInfluencers.campaignId, campaignId));
 
-  return rows.map((r) => ({
-    ...r.submission,
-    ci: r.ci,
-    influencerId: r.ci.influencerId,
-    influencerName: r.influencerName,
-    influencerHandle: r.influencerHandle,
-    influencerAvatar: r.influencerAvatar,
-  }));
+  return rows.map((r) => {
+    const s = r.submission as typeof r.submission & { url?: string | null; mediaUrl?: string | null; externalUrl?: string | null };
+    const stableUrl =
+      (s.mediaUrl && !s.mediaUrl.startsWith('blob:') ? s.mediaUrl : null) ||
+      (s.externalUrl && !s.externalUrl.startsWith('blob:') ? s.externalUrl : null) ||
+      (s.url && !s.url.startsWith('blob:') ? s.url : null) ||
+      s.url ||
+      s.mediaUrl ||
+      s.externalUrl ||
+      null;
+
+    return {
+      ...s,
+      url: stableUrl,
+      ci: r.ci,
+      influencerId: r.ci.influencerId,
+      influencerName: r.influencerName,
+      influencerHandle: r.influencerHandle,
+      influencerAvatar: r.influencerAvatar,
+    };
+  });
 }
 
 export async function submitWork(
@@ -85,7 +98,11 @@ export async function submitWork(
       campaignInfluencerId: ci.id,
       versionNumber: nextVersion,
       type: dto.type,
-      url: dto.url ?? dto.externalUrl ?? null,
+      // Never persist transient browser blob URLs as canonical media pointers.
+      url:
+        dto.type === 'file'
+          ? (dto.mediaUrl ?? null)
+          : ((dto.externalUrl ?? (dto.url && !dto.url.startsWith('blob:') ? dto.url : null)) ?? null),
       externalUrl: dto.externalUrl,
       textContent: dto.textContent,
       mediaUrl: dto.mediaUrl,

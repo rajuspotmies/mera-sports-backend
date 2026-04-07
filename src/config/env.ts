@@ -21,7 +21,7 @@ const envSchema = z.object({
   // CORS – comma-separated list, e.g. "http://localhost:8080,http://localhost:5173"
   FRONTEND_URLS: z
     .string()
-    .default('http://localhost:5173')
+    .default('http://localhost:5173,http://localhost:8080')
     .transform((v) => v.split(',').map((u) => u.trim())),
 
   // Storage (S3 / Railway Buckets)

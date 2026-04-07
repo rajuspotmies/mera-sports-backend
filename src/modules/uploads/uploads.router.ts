@@ -13,6 +13,10 @@ const router = Router();
  */
 router.get('/*', async (req: Request, res: Response, next: NextFunction) => {
     try {
+        // Allow media embedding from frontend domains that are cross-site in dev
+        // (e.g. localhost frontend consuming api.mutinyx.in uploads).
+        res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+
         // req.path gives the path relative to where the router is mounted
         // e.g. for /api/v1/uploads/campaigns/123.jpg, req.path is /campaigns/123.jpg
         const key = req.path.replace(/^\//, '');
@@ -33,9 +37,12 @@ router.get('/*', async (req: Request, res: Response, next: NextFunction) => {
             return;
         }
 
+        const requestRange = typeof req.headers.range === 'string' ? req.headers.range : undefined;
+
         const command = new GetObjectCommand({
             Bucket: env.S3_BUCKET_NAME,
             Key: finalKey,
+            Range: requestRange,
         });
 
         const s3Response = await s3Client.send(command);
@@ -46,6 +53,11 @@ router.get('/*', async (req: Request, res: Response, next: NextFunction) => {
         }
         if (s3Response.ContentLength) {
             res.setHeader('Content-Length', s3Response.ContentLength);
+        }
+        res.setHeader('Accept-Ranges', 'bytes');
+        if (s3Response.ContentRange) {
+            res.status(206);
+            res.setHeader('Content-Range', s3Response.ContentRange);
         }
 
         // Cache for 1 day (images don't change once uploaded)

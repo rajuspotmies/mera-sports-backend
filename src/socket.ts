@@ -64,12 +64,22 @@ export function initSocketServer(httpServer: HttpServer): SocketIOServer {
     // Join personal notification room
     socket.join(`user:${user.sub}`);
 
-    socket.on('JOIN_CAMPAIGN', (campaignId: string) => {
+    socket.on('JOIN_CAMPAIGN', (payload: string | { campaignId?: string }) => {
+      const campaignId =
+        typeof payload === 'string'
+          ? payload
+          : String(payload?.campaignId ?? '');
+      if (!campaignId) return;
       socket.join(`campaign:${campaignId}`);
       logger.debug(`${user.sub} joined campaign:${campaignId}`);
     });
 
-    socket.on('LEAVE_CAMPAIGN', (campaignId: string) => {
+    socket.on('LEAVE_CAMPAIGN', (payload: string | { campaignId?: string }) => {
+      const campaignId =
+        typeof payload === 'string'
+          ? payload
+          : String(payload?.campaignId ?? '');
+      if (!campaignId) return;
       socket.leave(`campaign:${campaignId}`);
     });
 

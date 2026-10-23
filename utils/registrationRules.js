@@ -116,6 +116,8 @@ export const normalizeEventCategories = (event) => {
             // manual close switch. Kept on the normalized object rather than
             // re-read from the raw array so both live behind one lookup.
             registrationClosed: isObj ? c.registrationClosed === true : false,
+            // Read by assertPlayerEligible. Never persisted (toCategoryObject).
+            ageRules: resolveCategoryAgeRules(isObj ? c : null, name),
             minTeamSize: isObj ? parsePositiveInt(c.minTeamSize) : null,
             maxTeamSize: isObj ? parsePositiveInt(c.maxTeamSize) : null,
         };
@@ -244,6 +246,26 @@ export const parseCategoryAgeRules = (name) => {
     };
 };
 
+const toAgeNumber = (value) => {
+    if (value === null || value === undefined || String(value).trim() === "") return undefined;
+    const n = Number(value);
+    return Number.isFinite(n) && n > 0 ? n : undefined;
+};
+
+/**
+ * A category's age rule: the explicit minAge/ageLimit the admin form saves,
+ * else its name. ageRuleSource "manual" means the admin typed the rule (blank =
+ * no limit) and the name must not be read — "Combined 80+" is not "80+".
+ * Mirrors resolveCategoryAgeRules in the player app.
+ */
+export const resolveCategoryAgeRules = (rawCategory, name) => {
+    const minAge = toAgeNumber(rawCategory?.minAge);
+    const ageLimit = toAgeNumber(rawCategory?.ageLimit);
+    if (rawCategory?.ageRuleSource === "manual") return { minAge, ageLimit };
+    const parsed = parseCategoryAgeRules(name);
+    return { minAge: minAge ?? parsed.minAge, ageLimit: ageLimit ?? parsed.ageLimit };
+};
+
 // Returns the player's birth year, or null when nothing usable is on file.
 export const resolveBirthYear = (user, currentYear) => {
     if (user?.dob) {
@@ -283,7 +305,8 @@ export const assertPlayerEligible = (user, categoryObjects, who = null) => {
 
         if (birthYear === null) continue; // no age on file — see note above
 
-        const { ageLimit, minAge } = parseCategoryAgeRules(cat.name);
+        // Event categories (normalizeEventCategories) carry their resolved rule.
+        const { ageLimit, minAge } = cat.ageRules ?? parseCategoryAgeRules(cat.name);
         // "Under 9" is strictly under 9 — the player must not turn 9 this year,
         // so the earliest allowed birth year is (currentYear - ageLimit + 1).
         // In 2026: U-9 => 2018, U-12 => 2015, U-15 => 2012.
@@ -563,7 +586,7 @@ export const validateRegistrationEntries = async ({ event, userId, payingUser, e
     }
 
     assertCategoriesOpen(event, resolved.map((r) => r.cat.id));
-    assertPlayerEligible(payingUser, resolved.map((r) => r.categoryObject));
+    assertPlayerEligible(payingUser, resolved.map((r) => r.cat));
 
     // Teams: existence, captaincy, roster.
     const teamIds = [...new Set(resolved.map((r) => r.teamId).filter(Boolean))];
@@ -634,7 +657,7 @@ export const validateRegistrationEntries = async ({ event, userId, payingUser, e
         if (max !== null && size > max) throw badRequest(`"${categoryLabel(r.cat)}" allows at most ${max} players including you. "${team.team_name}" has ${size}.`, "TEAM_SIZE", extra);
 
         for (const { member, user } of roster) {
-            assertPlayerEligible(user, [r.categoryObject], memberDisplay(member, user));
+            assertPlayerEligible(user, [r.cat], memberDisplay(member, user));
         }
         r.team = team;
         r.roster = roster;

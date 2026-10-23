@@ -4,7 +4,7 @@ import jwt from "jsonwebtoken";
 import { supabaseAdmin } from "../config/supabaseClient.js";
 import { cacheGet, cacheSet } from "../config/redisClient.js";
 import { dashboardCacheKey, DASHBOARD_CACHE_TTL, invalidateDashboardCache } from "../utils/dashboardCache.js";
-import { calculateAge, MINOR_AGE_LIMIT, resolveAge, withResolvedAge } from "../utils/age.js";
+import { calculateAge, isHeadManaged, MINOR_AGE_LIMIT, resolveAge, withResolvedAge } from "../utils/age.js";
 import { getPublicEventId } from "../utils/eventResolver.js";
 import { isTeamMatchType } from "../utils/registrationRules.js";
 import { getNextPlayerId } from "../utils/playerIdHelper.js";
@@ -336,16 +336,15 @@ export const getPlayerDashboard = async (req, res) => {
     }
 };
 
+const MOBILE_IN_USE_MESSAGE =
+    "This mobile number is already used by another account. To join that family, sign up with the number instead (verified by WhatsApp OTP).";
+
 // POST /api/player/check-conflict
 export const checkConflict = async (req, res) => {
     try {
         const userId = req.user.id;
         const { email, mobile } = req.body;
-        const { data: currentUser } = await supabaseAdmin.from("users").select("age, dob, email, mobile").eq("id", userId).maybeSingle();
-        // Derived from dob — the stored age column is stale for anyone who has
-        // had a birthday since signup.
-        const resolvedAge = resolveAge(currentUser);
-        const allowSharedMobile = resolvedAge !== null && resolvedAge <= 15;
+        const { data: currentUser } = await supabaseAdmin.from("users").select("email, mobile").eq("id", userId).maybeSingle();
 
         // Only a field that is actually being changed can conflict. The client sends
         // both values every time, so without this an unchanged mobile that another
@@ -360,8 +359,14 @@ export const checkConflict = async (req, res) => {
             if (data) return res.status(409).json({ conflict: true, field: 'email', message: "Email already taken" });
         }
         if (mobile && mobileChanged) {
-            const { data } = await supabaseAdmin.from("users").select("id").eq("mobile", mobile).neq("id", userId).maybeSingle();
-            if (data && !allowSharedMobile) return res.status(409).json({ conflict: true, field: 'mobile', message: "Mobile already taken" });
+            // Joining another family's number needs a WhatsApp OTP to it, which
+            // only signup does. A list, not maybeSingle: a shared number holds
+            // several rows, and maybeSingle's error on 2+ rows read as "free".
+            const { data, error } = await supabaseAdmin.from("users").select("id").eq("mobile", mobile).neq("id", userId).limit(1);
+            if (error) throw error;
+            if ((data || []).length > 0) {
+                return res.status(409).json({ conflict: true, field: 'mobile', message: MOBILE_IN_USE_MESSAGE });
+            }
         }
         res.json({ conflict: false });
     } catch (err) { res.status(500).json({ message: "Server error" }); }
@@ -408,10 +413,9 @@ export const updateProfile = async (req, res) => {
             if (data) return res.status(409).json({ message: "Email taken" });
         }
         if (mobile && mobile !== currentUser.mobile) {
-            const { data } = await supabaseAdmin.from("users").select("id").eq("mobile", mobile).neq("id", userId).maybeSingle();
-            const resolvedAge = resolveAge(currentUser);
-            const allowSharedMobile = resolvedAge !== null && resolvedAge <= 15;
-            if (data && !allowSharedMobile) return res.status(409).json({ message: "Mobile taken" });
+            const { data, error } = await supabaseAdmin.from("users").select("id").eq("mobile", mobile).neq("id", userId).limit(1);
+            if (error) throw error;
+            if ((data || []).length > 0) return res.status(409).json({ message: MOBILE_IN_USE_MESSAGE });
         }
 
         let photoUrl = photos;
@@ -508,6 +512,16 @@ export const deleteAccount = async (req, res) => {
 
 /* ================= FAMILY MEMBER MANAGEMENT ================= */
 
+// A head edits and removes only the members they manage (isHeadManaged). An
+// adult who joined by signing up on the family's number runs their own account.
+const selfManagedMemberRefusal = async (memberId) => {
+    const { data: member, error } = await supabaseAdmin
+        .from("users").select("name, first_name, last_name, age, dob, email").eq("id", memberId).maybeSingle();
+    if (error) throw error;
+    if (!member || isHeadManaged(member)) return null;
+    return `${displayName(member) || "This member"} manages their own account, so it can't be changed or removed from here.`;
+};
+
 export const addFamilyMember = async (req, res) => {
     try {
         const headUserId = req.user.id;
@@ -561,7 +575,7 @@ export const addFamilyMember = async (req, res) => {
         }
         if (age > MINOR_AGE_LIMIT) {
             return res.status(400).json({
-                message: `Only children aged ${MINOR_AGE_LIMIT} or under can be added to your family. Anyone older needs their own account and mobile number.`
+                message: `Only children aged ${MINOR_AGE_LIMIT} or under can be added here. Anyone older can sign up themselves with this mobile number (verified by WhatsApp OTP) and will join your family automatically.`
             });
         }
 
@@ -681,6 +695,8 @@ export const updateFamilyMember = async (req, res) => {
         if (relError || !relRecord) {
             return res.status(403).json({ message: "Not your family member" });
         }
+        const refusal = await selfManagedMemberRefusal(familyMemberId);
+        if (refusal) return res.status(403).json({ message: refusal });
 
         const { name, relation: newRelation, dob, gender, email, aadhaar, apartment, street, flat_building_wing, tshirt_size, city, state, pincode, country } = req.body;
 
@@ -805,6 +821,8 @@ export const deleteFamilyMember = async (req, res) => {
         if (!relRecord) {
             return res.status(403).json({ message: "Not your family member" });
         }
+        const refusal = await selfManagedMemberRefusal(familyMemberId);
+        if (refusal) return res.status(403).json({ message: refusal });
 
         // Delete the relation
         await supabaseAdmin.from("family_relations").delete().eq("id", relRecord.id);

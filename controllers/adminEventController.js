@@ -71,9 +71,9 @@ export const getAllCategories = async (req, res) => {
  * `player_id`, leaving every existing member field untouched, so readers that
  * know nothing about the new field are unaffected.
  *
- * The member's current `mobile` comes from the same lookup: the copy stored on
- * the roster is whatever was typed when the team was made, and is often blank.
- * Admins see and export it next to every player.
+ * The member's current `mobile` and `gender` come from the same lookup: the
+ * copy stored on the roster is whatever was typed when the team was made, and
+ * is often blank. Admins see and export them next to every player.
  */
 const attachMemberPlayerCodes = async (registrations) => {
     const rows = Array.isArray(registrations) ? registrations : [];
@@ -102,7 +102,7 @@ const attachMemberPlayerCodes = async (registrations) => {
     for (let i = 0; i < ids.length; i += 200) {
         const { data, error } = await supabaseAdmin
             .from("users")
-            .select("id, player_id, mobile")
+            .select("id, player_id, mobile, gender")
             .in("id", ids.slice(i, i + 200));
         if (error) {
             // Non-fatal by design: without codes the roster still renders, just
@@ -125,6 +125,7 @@ const attachMemberPlayerCodes = async (registrations) => {
                     ...member,
                     ...(user.player_id ? { player_id: user.player_id } : {}),
                     ...(user.mobile ? { mobile: user.mobile } : {}),
+                    ...(user.gender ? { gender: user.gender } : {}),
                 };
             });
         }
@@ -363,7 +364,7 @@ export const getRegistrationFilters = async (req, res) => {
 const TRANSACTION_ROW_FIELDS = `
                 id, event_id, player_id, team_id, registration_no, status, amount_paid, payment_proof:screenshot_url, manual_transaction_id, transaction_id, created_at, categories,
                 events ( id, name, created_by, assigned_to ),
-                users:player_id ( id, first_name, last_name, player_id, mobile, email, apartment ),
+                users:player_id ( id, first_name, last_name, player_id, mobile, email, gender, apartment ),
                 transactions:transaction_id ( id, payment_mode, payment_id, order_id ),
                 player_teams ( id, team_name )
             `;

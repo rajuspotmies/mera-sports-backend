@@ -1,5 +1,6 @@
 import { supabaseAdmin } from "../config/supabaseClient.js";
 import { buildCategoryTarget, registrationMatchesCategory } from "./categoryMatching.js";
+import { normalizeGender } from "./playerProfileFields.js";
 
 /**
  * ============================================================
@@ -285,19 +286,38 @@ export const resolveBirthYear = (user, currentYear) => {
  * accounts have neither and blocking them would stop registration entirely.
  * Tighten this only once DOB collection is in place.
  *
+ * Gender is NOT lenient: a player with no gender on file may enter no category
+ * at all. Letting them through is how genderless accounts ended up in the
+ * other gender's categories. Signup now requires it, and older accounts add it
+ * once from their profile.
+ *
  * `who` names a team member in the message ("Raju (P1761) is"); omitted, the
  * message addresses the paying player ("You are").
  */
+export const GENDER_REQUIRED_CODE = "GENDER_REQUIRED";
+
 export const assertPlayerEligible = (user, categoryObjects, who = null) => {
-    const playerGender = String(user?.gender || "").toLowerCase();
+    const normalized = normalizeGender(user?.gender);
+    const playerGender = normalized ? normalized.toLowerCase() : "";
     const currentYear = new Date().getFullYear();
     const birthYear = resolveBirthYear(user, currentYear);
     const subject = who ? `${who} is` : "You are";
 
+    if (!playerGender && categoryObjects.length > 0) {
+        const first = categoryObjects[0];
+        throw badRequest(
+            who
+                ? `${who} has no gender on their profile. They must add it in their profile before they can be entered in any category.`
+                : "Please add your gender in your profile (Dashboard → Player Info → Edit) before registering for any category.",
+            GENDER_REQUIRED_CODE,
+            { categoryId: String(first.id) }
+        );
+    }
+
     for (const cat of categoryObjects) {
         const extra = { categoryId: String(cat.id), code: "NOT_ELIGIBLE" };
         const categoryGender = String(cat.gender || "Mixed").toLowerCase();
-        if (playerGender && categoryGender !== "mixed" && categoryGender !== "open") {
+        if (categoryGender !== "mixed" && categoryGender !== "open") {
             if (categoryGender !== playerGender) {
                 throw badRequest(`${subject} not eligible for "${cat.name}" (${cat.gender} only)`, extra.code, extra);
             }

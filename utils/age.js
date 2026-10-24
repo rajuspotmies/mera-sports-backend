@@ -14,10 +14,10 @@
  */
 
 /**
- * The minor/adult boundary. Sharing a mobile number has no age limit (any age
- * may join a number with a WhatsApp OTP and becomes family), but minors may
- * sign up without an email, and a head manages the minors in their family
- * (see isHeadManaged); adults must bring their own email.
+ * The minor/adult boundary. It limits NOTHING about joining: sharing a mobile
+ * number, signing up without an email, and being added or edited in the
+ * Family tab are open to every age. It only decides what a family head may do
+ * to a member (isHeadManaged) and the relation guessed for a child.
  *
  * This single constant governs registration, the login profile chooser and the
  * dashboard family CRUD. It used to be the literal `15`/`16` scattered across

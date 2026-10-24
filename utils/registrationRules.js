@@ -308,7 +308,7 @@ export const assertPlayerEligible = (user, categoryObjects, who = null) => {
         throw badRequest(
             who
                 ? `${who} has no gender on their profile. They must add it in their profile before they can be entered in any category.`
-                : "Please add your gender in your profile (Dashboard → Player Info → Edit) before registering for any category.",
+                : "Please add your gender in your profile (Dashboard → Edit Profile) before registering for any category.",
             GENDER_REQUIRED_CODE,
             { categoryId: String(first.id) }
         );

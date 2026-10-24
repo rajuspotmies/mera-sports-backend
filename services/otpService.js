@@ -140,11 +140,16 @@ const bareMobile = (mobile) => {
     return normalized ? normalized.slice(2) : String(mobile || "").trim();
 };
 
-const mobileSessionSignature = (nonce, mobile) =>
-    crypto.createHmac("sha256", process.env.JWT_SECRET || "")
+const mobileSessionSignature = (nonce, mobile) => {
+    // No fallback: with an empty key anyone could compute a valid signature
+    // and tie an OTP session to a number it was never sent to.
+    const secret = process.env.JWT_SECRET;
+    if (!secret) throw new Error("JWT_SECRET is not configured");
+    return crypto.createHmac("sha256", secret)
         .update(`${nonce}:${bareMobile(mobile)}`)
         .digest("hex")
         .slice(0, 32);
+};
 
 /** True when this WhatsApp OTP session was sent to `mobile`. */
 export function mobileOtpSessionMatches(sessionId, mobile) {

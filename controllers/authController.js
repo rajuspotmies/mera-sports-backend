@@ -612,6 +612,22 @@ const guessRelation = (head, member) => {
     return "Other";
 };
 
+// Family joins on one number run one after another (per server process).
+// PostgREST gives no transaction across these writes, so this is what stops
+// two simultaneous signups on a number from interleaving their merges.
+const mobileJoinQueue = new Map();
+const withMobileLock = async (mobile, fn) => {
+    const key = bareMobileOf(mobile);
+    const previous = mobileJoinQueue.get(key) || Promise.resolve();
+    const run = previous.catch(() => {}).then(fn);
+    mobileJoinQueue.set(key, run);
+    try {
+        return await run;
+    } finally {
+        if (mobileJoinQueue.get(key) === run) mobileJoinQueue.delete(key);
+    }
+};
+
 /**
  * Link a newly registered account into the family of the number it shares.
  *
@@ -671,10 +687,15 @@ const joinMobileFamily = async (newcomer, onNumber) => {
             const byId = new Map((movingUsers || []).map(u => [u.id, u]));
             for (const rel of moving) {
                 touched.add(rel.of_player_id);
-                const { error } = await supabaseAdmin
-                    .from("family_relations")
-                    .update({ head_player_id: head.id, relation: guessRelation(head, byId.get(rel.of_player_id)) })
-                    .eq("id", rel.id);
+                // The new head may itself have been this root's member (a
+                // signup merged by a concurrent one): drop that row rather
+                // than make them their own member.
+                const { error } = rel.of_player_id === head.id
+                    ? await supabaseAdmin.from("family_relations").delete().eq("id", rel.id)
+                    : await supabaseAdmin
+                        .from("family_relations")
+                        .update({ head_player_id: head.id, relation: guessRelation(head, byId.get(rel.of_player_id)) })
+                        .eq("id", rel.id);
                 if (error) throw error;
             }
         }
@@ -839,7 +860,18 @@ export const registerPlayer = async (req, res) => {
         //     a failure here is logged rather than failing the registration.
         if (mobileMatches.length > 0) {
             try {
-                await joinMobileFamily(user, mobileMatches);
+                // One join per number at a time, reading the number's accounts
+                // inside the lock: two people signing up on it at once must not
+                // each see a stale list and build two families.
+                await withMobileLock(mobile, async () => {
+                    const { data: onNumber, error: onNumberError } = await supabaseAdmin
+                        .from("users")
+                        .select("id, age, dob, role, created_at")
+                        .eq("mobile", mobile)
+                        .eq("role", "player");
+                    if (onNumberError) throw onNumberError;
+                    await joinMobileFamily(user, onNumber || []);
+                });
             } catch (relationError) {
                 console.error("AUTO FAMILY RELATION ERROR:", relationError);
             }

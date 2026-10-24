@@ -15,7 +15,7 @@ import { sendRegistrationSuccessEmail } from "../utils/mailer.js";
 import { normalizeWhatsAppNumber, sendWelcomeWhatsApp } from "../utils/whatsapp.js";
 import { getNextPlayerId } from "../utils/playerIdHelper.js";
 import { uploadBase64 } from "../utils/uploadHelper.js";
-import { cleanFlatBuildingWing, cleanTshirtSize } from "../utils/playerProfileFields.js";
+import { cleanFlatBuildingWing, cleanTshirtSize, normalizeGender } from "../utils/playerProfileFields.js";
 import { invalidateDashboardCache } from "../utils/dashboardCache.js";
 
 /* ================= FORGOT PASSWORD ================= */
@@ -631,11 +631,16 @@ const withMobileLock = async (mobile, fn) => {
 /**
  * Link a newly registered account into the family of the number it shares.
  *
- * One number = one family, headed by its OLDEST member. Every "root" on the
- * number — an existing head, or an account in no family yet — is merged into
- * that family: when the newcomer is the oldest (a parent signing up after their
- * children) they become head and the rest move under them. Members keep their
- * label unless they move to a new head, when it is re-guessed from ages.
+ * One number = one family, headed by the OLDEST person on it. Every "root" on
+ * the number — an existing head, or an account in no family yet — is merged
+ * into that family: when someone older than the current head is on the number
+ * (a parent signing up after their children, or a parent the children added)
+ * they become head and the rest move under them. Members keep their label
+ * unless they move to a new head, when it is re-guessed from ages.
+ *
+ * Adding someone in the Family tab does NOT re-head the family: the person
+ * adding stays head, so they can go on adding (a member can't add). The next
+ * signup on the number applies the oldest-is-head rule.
  *
  * A head's extra powers (opening members from login, editing, removing) reach
  * only members aged 15 or under; adults in a family manage themselves.
@@ -667,7 +672,9 @@ const joinMobileFamily = async (newcomer, onNumber) => {
     }
 
     const roots = [...rootIds].map(id => users.get(id)).filter(Boolean);
-    const head = [newcomer, ...roots].sort(oldestFirst)[0];
+    // The oldest person on the number, members included: a father a child
+    // added in the Family tab still outranks a mother signing up later.
+    const head = [newcomer, ...roots, ...others].sort(oldestFirst)[0];
     const touched = new Set([head.id]);
 
     for (const root of [newcomer, ...roots]) {
@@ -731,9 +738,15 @@ export const registerPlayer = async (req, res) => {
         if (!lastName) missing.push("Last Name");
         if (!mobile) missing.push("Mobile");
         if (!dob) missing.push("Date of Birth");
+        if (!gender) missing.push("Gender");
 
         if (missing.length > 0) {
             return res.status(400).json({ message: `Missing required fields: ${missing.join(', ')}` });
+        }
+        // The signup form offers Male / Female; category eligibility matches on it.
+        const normalizedGender = normalizeGender(gender);
+        if (!normalizedGender) {
+            return res.status(400).json({ message: "Gender must be Male or Female" });
         }
 
         // 1. Calculate Age
@@ -747,14 +760,10 @@ export const registerPlayer = async (req, res) => {
         };
         const age = calculateAge(dob);
 
-        // Email is the adult's identity anchor and the only channel we can reach
-        // them on that isn't the shared family mobile, so it stays mandatory for
-        // them. A minor riding on a parent's number rarely has an inbox at all —
-        // requiring one would cap a household at a single child.
+        // Email is optional at every age: people joining a family's shared
+        // number (parents signing up on their children's phone, say) often
+        // have no inbox. When given it must still be unique (checked below).
         const normalizedEmail = email ? email.trim() : null;
-        if (!normalizedEmail && age > MINOR_AGE_LIMIT) {
-            return res.status(400).json({ message: "Missing required fields: Email" });
-        }
 
         // 2. Generate Password (DDMMYYYY) and hash with bcrypt
         const [year, month, day] = dob.split("-");
@@ -840,7 +849,7 @@ export const registerPlayer = async (req, res) => {
                 password: password,
                 role: 'player',
                 verification: isVerified ? 'verified' : 'pending',
-                gender: gender || null,
+                gender: normalizedGender,
                 // Only sent when filled in, so a database that has not yet run
                 // add_flat_building_wing_and_tshirt_size.sql keeps registering
                 // players who leave these optional fields blank.

@@ -4,12 +4,12 @@ import jwt from "jsonwebtoken";
 import { supabaseAdmin } from "../config/supabaseClient.js";
 import { cacheGet, cacheSet } from "../config/redisClient.js";
 import { dashboardCacheKey, DASHBOARD_CACHE_TTL, invalidateDashboardCache } from "../utils/dashboardCache.js";
-import { calculateAge, isHeadManaged, MINOR_AGE_LIMIT, resolveAge, withResolvedAge } from "../utils/age.js";
+import { calculateAge, isHeadManaged, resolveAge, withResolvedAge } from "../utils/age.js";
 import { getPublicEventId } from "../utils/eventResolver.js";
 import { isTeamMatchType } from "../utils/registrationRules.js";
 import { getNextPlayerId } from "../utils/playerIdHelper.js";
 import { uploadBase64 } from "../utils/uploadHelper.js";
-import { cleanFlatBuildingWing, cleanTshirtSize } from "../utils/playerProfileFields.js";
+import { cleanFlatBuildingWing, cleanTshirtSize, normalizeGender } from "../utils/playerProfileFields.js";
 
 /* ================= FAMILY VIEW HELPERS ================= */
 
@@ -423,6 +423,15 @@ export const updateProfile = async (req, res) => {
             photoUrl = await uploadBase64(photos, 'player-photos');
         }
 
+        // Gender can be filled in once, by accounts made before signup required
+        // it. After that it is fixed here: category eligibility depends on it,
+        // so changing it goes through an admin, not the player.
+        let nextGender = currentUser.gender;
+        if (!normalizeGender(currentUser.gender) && gender) {
+            nextGender = normalizeGender(gender);
+            if (!nextGender) return res.status(400).json({ message: "Gender must be Male or Female" });
+        }
+
         const updates = {
             email: email || currentUser.email,
             mobile: mobile || currentUser.mobile,
@@ -434,7 +443,7 @@ export const updateProfile = async (req, res) => {
             state: state !== undefined ? state : currentUser.state,
             pincode: pincode !== undefined ? pincode : currentUser.pincode,
             country: country !== undefined ? country : currentUser.country,
-            gender: gender !== undefined ? gender : currentUser.gender,
+            gender: nextGender,
             photos: photoUrl || currentUser.photos,
             // Only written when the client sent them, so a database without the
             // columns still accepts every other profile edit.
@@ -565,18 +574,13 @@ export const addFamilyMember = async (req, res) => {
             if (aadhaarExists) return res.status(400).json({ message: "Aadhaar already in use" });
         }
 
-        // Only minors may ride on someone else's mobile. An adult added here
-        // would end up sharing the head's number while being independently
-        // able to log in by that number, which is exactly the ambiguity the
-        // profile chooser resolves by treating the adult as the head.
+        // Any age may be added: a family shares one number however old its
+        // members are (e.g. grown-up children adding their parents). Each
+        // member still logs in with their own password (their DOB), and the
+        // head manages the members they add (isHeadManaged).
         const age = calculateAge(dob);
         if (age === null) {
             return res.status(400).json({ message: "Invalid date of birth" });
-        }
-        if (age > MINOR_AGE_LIMIT) {
-            return res.status(400).json({
-                message: `Only children aged ${MINOR_AGE_LIMIT} or under can be added here. Anyone older can sign up themselves with this mobile number (verified by WhatsApp OTP) and will join your family automatically.`
-            });
         }
 
         // Password = bcrypt(DDMMYYYY, 12)
@@ -728,14 +732,7 @@ export const updateFamilyMember = async (req, res) => {
             if (age === null) {
                 return res.status(400).json({ message: "Invalid date of birth" });
             }
-            // The same ceiling as creation. Without it a head could add a child
-            // and then edit the DOB to an adult one, producing an adult account
-            // on a shared number that add-family-member would have refused.
-            if (age > MINOR_AGE_LIMIT) {
-                return res.status(400).json({
-                    message: `A family member can only be ${MINOR_AGE_LIMIT} or under. Use "Unlink" to give them their own independent account.`
-                });
-            }
+            // No age ceiling: family members can be any age (see addFamilyMember).
             updateData.dob = dob;
             updateData.age = age;
             // Password changes with DOB

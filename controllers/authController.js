@@ -2,9 +2,11 @@ import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import jwt from "jsonwebtoken";
 import { supabaseAdmin } from "../config/supabaseClient.js";
-import { calculateAge, MINOR_AGE_LIMIT, resolveAge } from "../utils/age.js";
+import { calculateAge, resolveAge } from "../utils/age.js";
+import { getFamilyUsers, STORED_RELATION } from "../utils/family.js";
 import { createNotification } from "../services/notificationService.js";
 import {
+    mobileOtpSessionMatches,
     sendEmailOtp,
     sendMobileOtp,
     verifyEmailOtp,
@@ -14,7 +16,8 @@ import { sendRegistrationSuccessEmail } from "../utils/mailer.js";
 import { normalizeWhatsAppNumber, sendWelcomeWhatsApp } from "../utils/whatsapp.js";
 import { getNextPlayerId } from "../utils/playerIdHelper.js";
 import { uploadBase64 } from "../utils/uploadHelper.js";
-import { cleanFlatBuildingWing, cleanTshirtSize } from "../utils/playerProfileFields.js";
+import { cleanFlatBuildingWing, cleanTshirtSize, normalizeGender } from "../utils/playerProfileFields.js";
+import { invalidateDashboardCache } from "../utils/dashboardCache.js";
 
 /* ================= FORGOT PASSWORD ================= */
 
@@ -68,7 +71,7 @@ export const sendForgotPasswordOtp = async (req, res) => {
                         requiresAccountSelection: true,
                         profiles: profiles.map(p => {
                             const summary = toProfileSummary(p);
-                            return { id: p.id, name: summary.name, age: summary.age, relation: p.__relation };
+                            return { id: p.id, name: summary.name, age: summary.age };
                         }),
                     });
                 }
@@ -102,17 +105,9 @@ export const sendForgotPasswordOtp = async (req, res) => {
 // Verifies a forgot-password OTP and issues a short-lived reset token.
 // This is what binds the reset to a proven OTP — resetPassword below refuses
 // to run without a valid token, so the reset can never be called directly.
-// Labels each account on a shared number as Head or by its family relation, adults first.
-const withFamilyRelations = async (users) => {
-    const { data: rels } = await supabaseAdmin
-        .from("family_relations")
-        .select("of_player_id, relation")
-        .in("of_player_id", users.map(u => u.id));
-    const relById = new Map((rels || []).map(r => [r.of_player_id, r.relation]));
-    return users
-        .map(u => ({ ...u, __relation: relById.get(u.id) || 'Head' }))
-        .sort((x, y) => (resolveAge(y) ?? 0) - (resolveAge(x) ?? 0));
-};
+// Accounts on a shared number, adults first.
+const withFamilyRelations = async (users) =>
+    [...users].sort((x, y) => (resolveAge(y) ?? 0) - (resolveAge(x) ?? 0));
 
 export const verifyForgotPasswordOtp = async (req, res) => {
     try {
@@ -486,10 +481,22 @@ export const sendMobileRegistrationOtp = async (req, res) => {
 export const verifyMobileRegistrationOtp = async (req, res) => {
     try {
         const { mobile, otp, sessionId } = req.body;
+        // The session must belong to the number being registered — otherwise an
+        // OTP from your own phone could "verify" someone else's family number.
+        if (!mobileOtpSessionMatches(sessionId, mobile)) {
+            return res.status(400).json({ success: false, message: "This OTP was not sent to that mobile number. Please request a new OTP." });
+        }
         const verified = await verifyMobileOtp(sessionId, otp);
 
         if (verified) {
-            res.json({ success: true, message: "Mobile OTP Verified Successfully" });
+            // Proof for register-player, which requires it to join a number that
+            // is already in use.
+            const mobileVerificationToken = jwt.sign(
+                { type: "mobile_verified", mobile: bareMobileOf(mobile) },
+                process.env.JWT_SECRET,
+                { expiresIn: "30m" }
+            );
+            res.json({ success: true, message: "Mobile OTP Verified Successfully", mobileVerificationToken });
         } else {
             res.status(400).json({ success: false, message: "Invalid Mobile OTP" });
         }
@@ -508,9 +515,6 @@ export const checkUserConflict = async (req, res) => {
             return res.status(400).json({ message: "Mobile is required for check." });
         }
 
-        const requestedAge = calculateAge(dob);
-        const isMinorRequest = requestedAge !== null && requestedAge <= MINOR_AGE_LIMIT;
-
         // Email is optional for minors, so it only joins the lookup when given.
         // Concatenating an empty value into the filter would produce
         // `email.eq.` and PostgREST rejects the entire `or`, which silently
@@ -523,20 +527,25 @@ export const checkUserConflict = async (req, res) => {
 
         const { data: existingUsers, error } = await supabaseAdmin
             .from("users")
-            .select("id, mobile, email, aadhaar")
+            .select("id, mobile, email, aadhaar, age, dob, role")
             .or(filters.join(','));
         if (error) throw error;
 
-        if (existingUsers && existingUsers.length > 0) {
-            const existingIds = existingUsers.filter(u => u.mobile == mobile).map(u => u.id);
-            const mobileConflict = !isMinorRequest && existingIds.length > 0;
+        // A number already in use is not a conflict: anyone may join it, at any
+        // age, after a WhatsApp OTP to it, and becomes part of that family.
+        // The form uses sharedMobile to insist on the WhatsApp OTP.
+        const sharedMobile = (existingUsers || []).some(u => u.mobile == mobile && u.role === 'player');
 
+        if (existingUsers && existingUsers.length > 0) {
             const conflicts = new Set();
-            if (mobileConflict) conflicts.add("Mobile");
+            const messages = [];
             existingUsers.forEach(user => {
                 if (normalizedEmail && user.email == normalizedEmail) conflicts.add("Email");
                 if (aadhaar && user.aadhaar == aadhaar) conflicts.add("Aadhaar");
             });
+            for (const field of ["Email", "Aadhaar"]) {
+                if (conflicts.has(field)) messages.push(`${field} is already registered.`);
+            }
 
             if (conflicts.size > 0) {
                 const conflictList = Array.from(conflicts);
@@ -544,17 +553,144 @@ export const checkUserConflict = async (req, res) => {
                 return res.json({
                     conflict: true,
                     conflicts: conflictList,
+                    messages,
                     message: `${fieldStr} already exists.`
                 });
             }
         }
 
-        res.json({ conflict: false });
+        res.json({ conflict: false, sharedMobile });
 
     } catch (err) {
         console.error("CHECK CONFLICT ERROR:", err);
         res.status(500).json({ message: "Server error checking conflicts" });
     }
+};
+
+/* ================= SHARED NUMBER = FAMILY ================= */
+
+// Registration stores mobile as a bare 10-digit string.
+const bareMobileOf = (value) => {
+    const normalized = normalizeWhatsAppNumber(value);
+    return normalized ? normalized.slice(2) : String(value || "").trim();
+};
+
+// The token verifyMobileRegistrationOtp issues, for this exact number.
+const hasVerifiedMobile = (token, mobile) => {
+    if (!token) return false;
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        return decoded.type === "mobile_verified" && decoded.mobile === bareMobileOf(mobile);
+    } catch {
+        return false;
+    }
+};
+
+// Oldest first; unknown ages last; ties keep the earliest registered.
+const oldestFirst = (a, b) =>
+    (resolveAge(b) ?? -1) - (resolveAge(a) ?? -1)
+    || new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime();
+
+// Family joins on one number run one after another (per server process).
+// PostgREST gives no transaction across these writes, so this is what stops
+// two simultaneous signups on a number from interleaving their merges.
+const mobileJoinQueue = new Map();
+const withMobileLock = async (mobile, fn) => {
+    const key = bareMobileOf(mobile);
+    const previous = mobileJoinQueue.get(key) || Promise.resolve();
+    const run = previous.catch(() => {}).then(fn);
+    mobileJoinQueue.set(key, run);
+    try {
+        return await run;
+    } finally {
+        if (mobileJoinQueue.get(key) === run) mobileJoinQueue.delete(key);
+    }
+};
+
+/**
+ * Link a newly registered account into the family of the number it shares.
+ *
+ * One number = one family. Every "root" on the number (an existing family's
+ * anchor, or an account in no family yet) is merged into one family anchored
+ * on the oldest person. The anchor is storage only. Everyone in a family has
+ * the same rights, with no roles or tags (see utils/family.js).
+ */
+const joinMobileFamily = async (newcomer, onNumber) => {
+    const others = onNumber.filter(u => u.id !== newcomer.id);
+    if (others.length === 0) return;
+    const ids = others.map(u => u.id);
+
+    const { data: memberRels, error: memberRelsError } = await supabaseAdmin
+        .from("family_relations")
+        .select("head_player_id, of_player_id")
+        .in("of_player_id", ids);
+    if (memberRelsError) throw memberRelsError;
+
+    const memberIds = new Set((memberRels || []).map(r => r.of_player_id));
+    const rootIds = new Set([
+        ...(memberRels || []).map(r => r.head_player_id),
+        ...others.filter(u => !memberIds.has(u.id)).map(u => u.id),
+    ]);
+    rootIds.delete(newcomer.id);
+
+    const users = new Map(others.map(u => [u.id, u]));
+    const missing = [...rootIds].filter(id => !users.has(id));
+    if (missing.length > 0) {
+        const { data, error } = await supabaseAdmin.from("users").select("id, age, dob, created_at").in("id", missing);
+        if (error) throw error;
+        for (const u of data || []) users.set(u.id, u);
+    }
+
+    const roots = [...rootIds].map(id => users.get(id)).filter(Boolean);
+    // The oldest person on the number, members included: a father a child
+    // added in the Family tab still outranks a mother signing up later.
+    const head = [newcomer, ...roots, ...others].sort(oldestFirst)[0];
+    const touched = new Set([head.id]);
+
+    for (const root of [newcomer, ...roots]) {
+        touched.add(root.id);
+        if (root.id === head.id) continue;
+
+        // A root that headed a family hands its members over to the new head.
+        const { data: moving, error: movingError } = await supabaseAdmin
+            .from("family_relations")
+            .select("id, of_player_id")
+            .eq("head_player_id", root.id);
+        if (movingError) throw movingError;
+        if ((moving || []).length > 0) {
+            const { data: movingUsers, error: movingUsersError } = await supabaseAdmin
+                .from("users").select("id, age, dob").in("id", moving.map(r => r.of_player_id));
+            if (movingUsersError) throw movingUsersError;
+            const byId = new Map((movingUsers || []).map(u => [u.id, u]));
+            for (const rel of moving) {
+                touched.add(rel.of_player_id);
+                // The new head may itself have been this root's member (a
+                // signup merged by a concurrent one): drop that row rather
+                // than make them their own member.
+                const { error } = rel.of_player_id === head.id
+                    ? await supabaseAdmin.from("family_relations").delete().eq("id", rel.id)
+                    : await supabaseAdmin
+                        .from("family_relations")
+                        .update({ head_player_id: head.id })
+                        .eq("id", rel.id);
+                if (error) throw error;
+            }
+        }
+
+        const { error } = await supabaseAdmin
+            .from("family_relations")
+            .upsert(
+                { head_player_id: head.id, of_player_id: root.id, relation: STORED_RELATION },
+                { onConflict: "head_player_id,of_player_id" }
+            );
+        if (error) throw error;
+    }
+
+    // Everyone whose Family tab changed. Members already under an unchanged
+    // head see the newcomer too, so clear theirs as well.
+    const { data: family } = await supabaseAdmin.from("family_relations").select("of_player_id").eq("head_player_id", head.id);
+    for (const r of family || []) touched.add(r.of_player_id);
+    await Promise.all([...touched].map(id => invalidateDashboardCache(id)));
 };
 
 /* ================= REGISTER PLAYER ================= */
@@ -572,9 +708,15 @@ export const registerPlayer = async (req, res) => {
         if (!lastName) missing.push("Last Name");
         if (!mobile) missing.push("Mobile");
         if (!dob) missing.push("Date of Birth");
+        if (!gender) missing.push("Gender");
 
         if (missing.length > 0) {
             return res.status(400).json({ message: `Missing required fields: ${missing.join(', ')}` });
+        }
+        // The signup form offers Male / Female; category eligibility matches on it.
+        const normalizedGender = normalizeGender(gender);
+        if (!normalizedGender) {
+            return res.status(400).json({ message: "Gender must be Male or Female" });
         }
 
         // 1. Calculate Age
@@ -588,14 +730,10 @@ export const registerPlayer = async (req, res) => {
         };
         const age = calculateAge(dob);
 
-        // Email is the adult's identity anchor and the only channel we can reach
-        // them on that isn't the shared family mobile, so it stays mandatory for
-        // them. A minor riding on a parent's number rarely has an inbox at all —
-        // requiring one would cap a household at a single child.
+        // Email is optional at every age: people joining a family's shared
+        // number (parents signing up on their children's phone, say) often
+        // have no inbox. When given it must still be unique (checked below).
         const normalizedEmail = email ? email.trim() : null;
-        if (!normalizedEmail && age > MINOR_AGE_LIMIT) {
-            return res.status(400).json({ message: "Missing required fields: Email" });
-        }
 
         // 2. Generate Password (DDMMYYYY) and hash with bcrypt
         const [year, month, day] = dob.split("-");
@@ -608,7 +746,8 @@ export const registerPlayer = async (req, res) => {
             return res.status(500).json({ message: "Failed to secure password. Please try again." });
         }
 
-        // 3. Duplicate Check (email/aadhaar are unique; mobile is shareable by minors)
+        // 3. Duplicate Check (email/aadhaar are unique; a mobile already in use
+        //    can be joined — any age — with a WhatsApp OTP, and makes family)
         //    Built as a list so an absent email doesn't emit `email.eq.` — an
         //    empty operand makes PostgREST reject the whole filter, which would
         //    skip duplicate detection entirely for every email-less minor.
@@ -618,10 +757,11 @@ export const registerPlayer = async (req, res) => {
 
         const { data: duplicates } = await supabaseAdmin
             .from("users")
-            .select("id, mobile, email, aadhaar, age, created_at")
+            .select("id, mobile, email, aadhaar, age, dob, role, created_at")
             .or(duplicateFilters.join(','));
 
-        let selectedHeadPlayerId = null;
+        // Accounts already on this number; the new account joins their family (6b).
+        let mobileMatches = [];
 
         if (duplicates && duplicates.length > 0) {
             // Email and aadhaar are always unique
@@ -631,41 +771,14 @@ export const registerPlayer = async (req, res) => {
                 return res.status(400).json({ message: "User with this Email or Aadhaar already exists." });
             }
 
-            // Mobile: allow duplicate only when the new registrant is a minor
-            const mobileMatches = duplicates.filter(u => u.mobile === mobile);
-            if (mobileMatches.length > 0) {
-                if (age > MINOR_AGE_LIMIT) {
-                    return res.status(400).json({ message: "User with this Mobile already exists." });
-                }
-
-                const { data: familyRels } = await supabaseAdmin
-                    .from("family_relations")
-                    .select("head_player_id, of_player_id")
-                    .in("of_player_id", mobileMatches.map(u => u.id));
-
-                const familyMemberIds = new Set((familyRels || []).map(r => r.of_player_id));
-
-                const directHeadCandidates = mobileMatches
-                    .filter(u => !familyMemberIds.has(u.id) && (u.age == null || Number(u.age) > MINOR_AGE_LIMIT))
-                    .sort((a, b) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime());
-
-                if (directHeadCandidates.length > 0) {
-                    selectedHeadPlayerId = directHeadCandidates[0].id;
-                } else if ((familyRels || []).length > 0) {
-                    const derivedHeadIds = [...new Set((familyRels || []).map(r => r.head_player_id).filter(Boolean))];
-                    if (derivedHeadIds.length > 0) {
-                        const { data: derivedHeads } = await supabaseAdmin
-                            .from("users")
-                            .select("id, age, created_at")
-                            .in("id", derivedHeadIds)
-                            .order("created_at", { ascending: true });
-
-                        const adultDerivedHeads = (derivedHeads || []).filter(h => h.age == null || Number(h.age) > MINOR_AGE_LIMIT);
-                        if (adultDerivedHeads.length > 0) {
-                            selectedHeadPlayerId = adultDerivedHeads[0].id;
-                        }
-                    }
-                }
+            // Mobile already in use: no age limit, but the WhatsApp OTP to that
+            // number is mandatory — it is what proves the family let them in.
+            mobileMatches = duplicates.filter(u => u.mobile === mobile && u.role === 'player');
+            if (mobileMatches.length > 0 && !hasVerifiedMobile(req.body.mobileVerificationToken, mobile)) {
+                return res.status(403).json({
+                    code: "MOBILE_OTP_REQUIRED",
+                    message: "This mobile number is already registered. Verify it with the WhatsApp OTP to join that family.",
+                });
             }
         }
 
@@ -706,7 +819,7 @@ export const registerPlayer = async (req, res) => {
                 password: password,
                 role: 'player',
                 verification: isVerified ? 'verified' : 'pending',
-                gender: gender || null,
+                gender: normalizedGender,
                 // Only sent when filled in, so a database that has not yet run
                 // add_flat_building_wing_and_tshirt_size.sql keeps registering
                 // players who leave these optional fields blank.
@@ -722,20 +835,23 @@ export const registerPlayer = async (req, res) => {
 
         if (error) throw error;
 
-        // 6b. For minors sharing a mobile, auto-link under selected head as Child
-        if (age <= MINOR_AGE_LIMIT && selectedHeadPlayerId && selectedHeadPlayerId !== newUserId) {
-            const { error: relationError } = await supabaseAdmin
-                .from("family_relations")
-                .upsert(
-                    {
-                        head_player_id: selectedHeadPlayerId,
-                        of_player_id: newUserId,
-                        relation: "Child"
-                    },
-                    { onConflict: "head_player_id,of_player_id" }
-                );
-
-            if (relationError) {
+        // 6b. Sharing a number makes family. The account is already created, so
+        //     a failure here is logged rather than failing the registration.
+        if (mobileMatches.length > 0) {
+            try {
+                // One join per number at a time, reading the number's accounts
+                // inside the lock: two people signing up on it at once must not
+                // each see a stale list and build two families.
+                await withMobileLock(mobile, async () => {
+                    const { data: onNumber, error: onNumberError } = await supabaseAdmin
+                        .from("users")
+                        .select("id, age, dob, role, created_at")
+                        .eq("mobile", mobile)
+                        .eq("role", "player");
+                    if (onNumberError) throw onNumberError;
+                    await joinMobileFamily(user, onNumber || []);
+                });
+            } catch (relationError) {
                 console.error("AUTO FAMILY RELATION ERROR:", relationError);
             }
         }
@@ -826,13 +942,16 @@ const playerTokenExpiresIn = () => {
     return "7d";
 };
 
-// The signed-in payload. Shared by password login and profile selection so the
-// two entry points can never drift apart.
+// The signed-in payload. Shared by password login, profile selection and the
+// in-app profile switch so the entry points can never drift apart.
 const buildPlayerSession = (user) => ({
     success: true,
     token: jwt.sign({ id: user.id, role: 'player' }, process.env.JWT_SECRET, { expiresIn: playerTokenExpiresIn() }),
     user: {
         id: user.id,
+        // The client stores this as the session's playerId; it was missing,
+        // so pages reading it showed "Unknown" until the dashboard loaded.
+        playerId: user.player_id,
         firstName: user.first_name,
         lastName: user.last_name,
         role: 'player',
@@ -856,44 +975,23 @@ const toProfileSummary = (user) => ({
     name: user.name || `${user.first_name || ""} ${user.last_name || ""}`.trim(),
     photos: user.photos,
     age: resolveAge(user),
-    relation: user.__relation || 'Head',
 });
 
-// Given the accounts a password opened, add the minors linked under any of them
-// so a parent sees the whole household in one chooser.
+// Given the accounts a password opened, add everyone in their families: every
+// family member may switch to every other (utils/family.js), so the chooser
+// offers the same set. The accounts the password matched come first.
+//
+// Errors must not be swallowed: an empty result would collapse the chooser to
+// one profile, indistinguishable from "no family". Fail loudly so the client
+// retries instead of hiding people.
 const expandFamilyProfiles = async (matched) => {
-    const headIds = matched.map(u => u.id);
-    const heads = matched.map(u => ({ ...u, __relation: 'Head' }));
-
-    const { data: relations, error } = await supabaseAdmin
-        .from("family_relations")
-        .select("of_player_id, relation")
-        .in("head_player_id", headIds);
-
-    // This error must not be swallowed. Falling through to `relations || []`
-    // collapses the chooser down to the parent alone, which is indistinguishable
-    // from "this parent has no children" — the exact failure the feature exists
-    // to prevent. Fail loudly so the client retries instead of hiding the kids.
-    if (error) throw error;
-
-    const memberIds = [...new Set(
-        (relations || []).map(r => r.of_player_id).filter(id => id && !headIds.includes(id))
-    )];
-    if (memberIds.length === 0) return heads;
-
-    const { data: members, error: membersError } = await supabaseAdmin
-        .from("users")
-        .select("*")
-        .in("id", memberIds);
-    if (membersError) throw membersError;
-
-    const relationById = new Map((relations || []).map(r => [r.of_player_id, r.relation]));
-    const linked = (members || [])
-        .filter(m => m.role === 'player')
-        .map(m => ({ ...m, __relation: relationById.get(m.id) || 'Child' }))
-        .sort((a, b) => (resolveAge(b) ?? 0) - (resolveAge(a) ?? 0));
-
-    return [...heads, ...linked];
+    const byId = new Map(matched.map(u => [u.id, u]));
+    for (const account of matched) {
+        for (const member of await getFamilyUsers(account.id)) {
+            if (!byId.has(member.id)) byId.set(member.id, member);
+        }
+    }
+    return [...byId.values()];
 };
 
 export const loginPlayer = async (req, res) => {
@@ -957,11 +1055,9 @@ export const loginPlayer = async (req, res) => {
 
         if (matched.length === 0) return res.status(401).json({ message: "Invalid credentials" });
 
-        // The profile chooser, for mobile logins only. Signing in as the head of
-        // a family also unlocks the minors linked under them, so one parent
-        // password reaches every child. The reverse is deliberately NOT true: a
-        // minor's password only ever opens the minor's own account, otherwise a
-        // child who knows their own DOB could walk into the parent's profile.
+        // The profile chooser, for mobile logins only: any family member's
+        // password offers the whole family, the same set they could switch to
+        // once signed in (the user's decision, 26 Oct 2026).
         let profiles = matched;
         if (resolvedByMobile) {
             profiles = await expandFamilyProfiles(matched);
@@ -1027,6 +1123,47 @@ export const selectLoginProfile = async (req, res) => {
     } catch (err) {
         console.error("PROFILE SELECT ERROR:", err);
         res.status(500).json({ message: "Failed to open profile" });
+    }
+};
+
+/* ================= FAMILY PROFILE SWITCH ================= */
+
+// Every profile this session may switch to: everyone in the signed-in
+// player's family. Recomputed on every call, never trusted from the client, so
+// adding or removing a member takes effect at once.
+const loadSwitchableProfiles = (sessionUser) => getFamilyUsers(sessionUser.id);
+
+// GET /api/auth/family-profiles
+export const getSwitchableProfiles = async (req, res) => {
+    try {
+        const profiles = await loadSwitchableProfiles(req.user);
+        res.json({
+            success: true,
+            currentId: req.user.id,
+            profiles: profiles.map(toProfileSummary),
+        });
+    } catch (err) {
+        console.error("FAMILY PROFILES ERROR:", err);
+        res.status(500).json({ message: "Failed to load family profiles" });
+    }
+};
+
+// POST /api/auth/switch-profile  { userId }
+export const switchProfile = async (req, res) => {
+    try {
+        const { userId } = req.body || {};
+        if (!userId) return res.status(400).json({ message: "Missing profile" });
+
+        const profiles = await loadSwitchableProfiles(req.user);
+        const target = profiles.find(p => p.id === userId);
+        if (!target) {
+            return res.status(403).json({ message: "That profile is not in your family." });
+        }
+
+        res.json(buildPlayerSession(target));
+    } catch (err) {
+        console.error("PROFILE SWITCH ERROR:", err);
+        res.status(500).json({ message: "Failed to switch profile" });
     }
 };
 

@@ -264,6 +264,47 @@ export const authPaths = {
         },
     },
 
+    "/api/auth/family-profiles": {
+        get: {
+            tags: AUTH_TAG,
+            summary: "Family profiles this session can switch to",
+            description:
+                "Everyone in the signed-in player's family (one shared mobile number). Families have no roles, so every member can switch to every other; the shared-mobile login chooser offers the same set.",
+            security: [{ bearerAuth: [] }],
+            responses: {
+                ...ok("Switchable profiles.", obj({
+                    success: { type: "boolean" },
+                    currentId: { type: "string", format: "uuid" },
+                    profiles: {
+                        type: "array",
+                        items: obj({
+                            id: { type: "string", format: "uuid" },
+                            player_id: { type: "string" },
+                            name: { type: "string" },
+                            photos: { type: "string", nullable: true },
+                            age: { type: "integer", nullable: true },
+                        }),
+                    },
+                })),
+                ...errors(401, 403, 500),
+            },
+        },
+    },
+
+    "/api/auth/switch-profile": {
+        post: {
+            tags: AUTH_TAG,
+            summary: "Switch the session to another family profile",
+            description: "Returns a new player session for `userId`, which must be one of `GET /api/auth/family-profiles`.",
+            security: [{ bearerAuth: [] }],
+            requestBody: jsonBody(obj({ userId: { type: "string", format: "uuid" } }, ["userId"])),
+            responses: {
+                ...ok("Switched.", { $ref: "#/components/schemas/AuthSuccess" }),
+                ...errors(400, 401, 403, 500),
+            },
+        },
+    },
+
     /* ── admin ───────────────────────────────────────────────────────────── */
 
     "/api/auth/register-admin": {

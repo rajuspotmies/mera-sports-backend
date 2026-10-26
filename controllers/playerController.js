@@ -468,6 +468,11 @@ export const deleteAccount = async (req, res) => {
 
 const FAMILY_ONLY_MESSAGE = "That player is not in your family.";
 
+const GENDER_VALUES_MESSAGE = "Gender must be Male or Female";
+
+const IDENTITY_LOCKED_MESSAGE = (field) =>
+    `A player's ${field} can't be changed once it is set. If it is wrong, please contact the organisers to correct it.`;
+
 /** Default password: the date of birth as DDMMYYYY. */
 const dobPassword = (dob) => {
     const [year, month, day] = String(dob).slice(0, 10).split("-");
@@ -481,6 +486,11 @@ export const addFamilyMember = async (req, res) => {
 
         if (!name?.trim() || !dob || !gender) {
             return res.status(400).json({ message: "Name, DOB, and Gender are required" });
+        }
+        // Same rule as Edit Profile: categories need Male or Female, and once
+        // saved it is locked (see updateFamilyMember).
+        if (!normalizeGender(gender)) {
+            return res.status(400).json({ message: GENDER_VALUES_MESSAGE });
         }
 
         // The member joins the family's number. That is the anchor's number,
@@ -545,7 +555,7 @@ export const addFamilyMember = async (req, res) => {
                 mobile: anchor.mobile || null,
                 dob,
                 age,
-                gender,
+                gender: normalizeGender(gender),
                 apartment: apartment || null,
                 street: street || null,
                 ...(cleanFlatBuildingWing(flat_building_wing) ? { flat_building_wing: cleanFlatBuildingWing(flat_building_wing) } : {}),
@@ -603,7 +613,7 @@ export const updateFamilyMember = async (req, res) => {
         }
 
         const { data: member, error: memberError } = await supabaseAdmin
-            .from("users").select("email, dob, password").eq("id", familyMemberId).maybeSingle();
+            .from("users").select("email, dob, gender").eq("id", familyMemberId).maybeSingle();
         if (memberError) throw memberError;
         if (!member) return res.status(404).json({ message: "Family member not found" });
 
@@ -633,6 +643,20 @@ export const updateFamilyMember = async (req, res) => {
             if (aadhaarExists) return res.status(400).json({ message: "Aadhaar already in use" });
         }
 
+        // Date of birth and gender decide which categories a player may enter.
+        // Once either is set, no family member can change it, and the player
+        // can't either (Edit Profile doesn't accept them). Only an admin can
+        // correct a wrong one, so an entry can't be made eligible by editing
+        // a birth year. A member who has none yet can have it filled in once.
+        const sameDob = String(dob ?? "").slice(0, 10) === String(member.dob ?? "").slice(0, 10);
+        if (dob !== undefined && member.dob && !sameDob) {
+            return res.status(403).json({ message: IDENTITY_LOCKED_MESSAGE("date of birth") });
+        }
+        const storedGender = normalizeGender(member.gender);
+        if (gender !== undefined && storedGender && normalizeGender(gender) !== storedGender) {
+            return res.status(403).json({ message: IDENTITY_LOCKED_MESSAGE("gender") });
+        }
+
         // Build update object
         const updateData = {};
         if (name !== undefined) {
@@ -642,21 +666,19 @@ export const updateFamilyMember = async (req, res) => {
             updateData.first_name = parts[0];
             updateData.last_name = parts.slice(1).join(" ") || "";
         }
-        if (dob !== undefined && String(dob).slice(0, 10) !== String(member.dob || "").slice(0, 10)) {
+        // Only reached when filling in a missing value (see the lock above).
+        if (dob && !member.dob) {
             const age = calculateAge(dob);
             if (age === null) {
                 return res.status(400).json({ message: "Invalid date of birth" });
             }
             updateData.dob = dob;
             updateData.age = age;
-            // The default password follows the DOB, but only while it still
-            // is the default. A password the member chose stays theirs:
-            // otherwise anyone in the family could reset it by editing a date.
-            const stillDefault = member.dob && member.password
-                && await bcrypt.compare(dobPassword(member.dob), member.password);
-            if (stillDefault) updateData.password = await bcrypt.hash(dobPassword(dob), 12);
         }
-        if (gender !== undefined) updateData.gender = gender;
+        if (gender && !storedGender) {
+            if (!normalizeGender(gender)) return res.status(400).json({ message: GENDER_VALUES_MESSAGE });
+            updateData.gender = normalizeGender(gender);
+        }
         if (email !== undefined) updateData.email = email || null;
         if (aadhaar !== undefined) updateData.aadhaar = aadhaar || null;
         if (apartment !== undefined) updateData.apartment = apartment || null;
